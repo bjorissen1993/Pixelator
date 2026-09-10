@@ -8,8 +8,9 @@ from prompts.identity import identity_constraints
 from prompts.state_prompts import state_prompt
 
 DEFAULT_NEGATIVE = (
-    "photorealistic, 3D render, blurry, smooth gradients, anti-aliasing, painterly, "
-    "extra characters, scenery, text, watermark, modern clothing unless requested"
+    "photorealistic, 3D render, blurry, smooth gradients, anti-aliasing, dithering, "
+    "noisy speckles, jpeg artifacts, painterly, extra characters, scenery, text, watermark, "
+    "modern clothing unless requested"
 )
 
 

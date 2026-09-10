@@ -69,6 +69,8 @@ export const api = {
     request<GenerationResult>(`/api/characters/${id}/generate-variation`, { method: "POST", body: "{}" }),
   discardPending: (id: string) =>
     request<CharacterProfile>(`/api/characters/${id}/discard-pending`, { method: "POST", body: "{}" }),
+  reprocessPending: (id: string) =>
+    request<GenerationResult>(`/api/characters/${id}/reprocess-pending`, { method: "POST", body: "{}" }),
   generationProgress: (id: string) => request<GenerationProgress>(`/api/characters/${id}/generation-progress`),
   generateState: (id: string, stateId: string, body: Record<string, unknown> = {}) =>
     request<GenerationResult>(`/api/characters/${id}/generate/state/${stateId}`, { method: "POST", body: JSON.stringify(body) }),

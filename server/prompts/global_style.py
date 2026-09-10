@@ -1,6 +1,7 @@
 PIXELATOR_STYLE = (
-    "true 2D pixel-art game sprite, deliberate square pixel clusters, limited indexed color palette, "
-    "crisp hard pixel edges, no anti-aliasing, no photorealism, no 3D render, "
+    "true 2D pixel-art game sprite, chunky square pixel clusters 2 to 4 pixels wide, "
+    "limited indexed color palette, flat color fills, crisp hard pixel edges, "
+    "no anti-aliasing, no dithering, no noisy speckles, no photorealism, no 3D render, "
     "no PBR materials, no painterly blending, single character centered, game-ready sprite, "
     "plain or transparent background, no text, no scenery, no extra characters"
 )
@@ -13,11 +14,11 @@ CAMERA_CLAUSES = {
 }
 
 DETAIL_CLAUSES = {
-    "low": "low pixel detail, large readable clusters, simple forms",
-    "medium": "medium pixel detail, readable silhouette, controlled clusters",
-    "high": "high pixel detail while preserving a readable silhouette",
-    "simple": "low pixel detail, large readable clusters, simple forms",
-    "balanced": "medium pixel detail, readable silhouette, controlled clusters",
+    "low": "low pixel detail, large readable clusters, simple blocky forms",
+    "medium": "medium pixel detail, readable silhouette, large color clusters, few colors per shape",
+    "high": "higher pixel detail while keeping chunky clusters and a readable silhouette",
+    "simple": "low pixel detail, large readable clusters, simple blocky forms",
+    "balanced": "medium pixel detail, readable silhouette, large color clusters, few colors per shape",
 }
 
 OUTLINE_CLAUSES = {

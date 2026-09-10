@@ -80,7 +80,7 @@ export function Workspace() {
             <h2>{character?.name ?? "No character"}</h2>
             <p>
               Provider {provider?.name ?? "unknown"} · {provider?.modelId}
-              {provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · cleanup pipeline"}
+              {provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · pixelize pipeline"}
               {provider?.capabilities?.supportsReferenceImage ? " · reference img2img" : ""}
               {provider?.capabilities?.batchIsSequential ? " · 8-dir sequential" : ""}
               {character?.acceptedBase ? " · base locked" : ""}

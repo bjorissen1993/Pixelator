@@ -23,7 +23,7 @@ def apply_outline(image: Image.Image, style: OutlineStyle) -> Image.Image:
             elif style in ("dark", "black"):
                 pixels[x, y] = (16, 18, 14, 255)
             else:
-                pixels[x, y] = (36, 46, 34, 220)
+                pixels[x, y] = (28, 34, 26, 255)
     return rgba
 
 

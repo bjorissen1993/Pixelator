@@ -34,9 +34,9 @@ def _chimera() -> StyleProfile:
     return StyleProfile(
         id="chimera",
         name="Chimera",
-        palette=PaletteSettings(colorCount=32, locked=False, colors=[]),
+        palette=PaletteSettings(colorCount=20, locked=False, colors=[]),
         camera="high-top-down",
-        outline="selective",
+        outline="black",
         shading="basic",
         detail="medium",
         spriteSize=48,

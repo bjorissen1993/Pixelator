@@ -41,7 +41,7 @@ class SpiritSettings(BaseModel):
 
 
 class PaletteSettings(BaseModel):
-    colorCount: int = Field(default=40, ge=8, le=128)
+    colorCount: int = Field(default=20, ge=8, le=64)
     locked: bool = False
     colors: list[str] = Field(default_factory=list)
 

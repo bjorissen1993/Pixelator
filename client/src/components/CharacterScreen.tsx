@@ -197,11 +197,12 @@ export function CharacterScreen() {
             <TextInput
               type="number"
               min={8}
-              max={128}
+              max={64}
               value={draft.palette.colorCount}
               onChange={(event) => set("palette", { ...draft.palette, colorCount: Number(event.target.value) })}
             />
           </Field>
+          <p className="hint">48×48 sprites stay readable around 16–24 colors. More colors turn into muddy speckle.</p>
         </div>
         <Toggle
           label="Lock seed"

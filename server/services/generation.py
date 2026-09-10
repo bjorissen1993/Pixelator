@@ -283,6 +283,47 @@ def discard_pending(character_id: str) -> CharacterProfile:
     return character_service.save_character(character)
 
 
+def reprocess_from_source(character_id: str) -> dict:
+    nested = _track(character_id, "Re-pixelizing source")
+    try:
+        character = character_service.get_character(character_id)
+        pending = character.pendingBase
+        accepted = character.acceptedBase.sprite if character.acceptedBase else None
+        source_asset = pending or accepted
+        if source_asset is None:
+            raise ValueError("No source image to re-pixelize. Generate a base first.")
+        source = load_image(source_asset.sourcePath) if source_asset.sourcePath else None
+        if source is None:
+            source = load_image(source_asset.path)
+        if source is None:
+            raise ValueError("Source image file is missing")
+        sprite, preview, validation = process_generated(character, source)
+        asset = make_asset(
+            character,
+            sprite,
+            "base/pending.png",
+            source_asset.prompt,
+            source_asset.seed,
+            "full",
+            validation,
+            estimate_head_anchor(sprite, character.spriteSize),
+            preview,
+            source=source,
+            negative=source_asset.negativePrompt,
+        )
+        character.pendingBase = asset
+        character_service.save_character(character)
+        return {
+            "character": character,
+            "prompt": build_prompt(character),
+            "usedReference": False,
+            "asset": asset,
+        }
+    finally:
+        if not nested:
+            progress.finish(character_id)
+
+
 def generate_variation(character_id: str, seed: int | None = None, override: str = "") -> dict:
     nested = _track(character_id, "Generating variation")
     try:

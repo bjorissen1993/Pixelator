@@ -86,6 +86,18 @@ export function StudioScreen() {
                 <Button variant="ghost" disabled={locked || !character.pendingBase} onClick={() => run("Discarding pending", () => api.discardPending(character.id).then(setCharacter), { generating: false })}>
                   Discard
                 </Button>
+                <Button
+                  variant="secondary"
+                  disabled={locked || (!character.pendingBase && !character.acceptedBase)}
+                  onClick={() =>
+                    run("Re-pixelizing source", async () => {
+                      const result = await api.reprocessPending(character.id);
+                      if (result) applyResult(result);
+                    }, { generating: true })
+                  }
+                >
+                  Re-pixelize
+                </Button>
                 <Button variant="secondary" disabled={locked || !character.acceptedBase} onClick={() => run("Generating variation", async () => {
                   const result = await api.generateVariation(character.id);
                   if (result) applyResult(result);

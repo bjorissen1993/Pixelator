@@ -12,7 +12,7 @@ MODEL_ID = os.getenv("MODEL_ID", "stabilityai/sdxl-turbo")
 PIXEL_MODEL_ID = os.getenv("PIXEL_MODEL_ID", "").strip()
 DEVICE = os.getenv("DEVICE", "cuda")
 ENABLE_BG_REMOVAL = os.getenv("ENABLE_BG_REMOVAL", "true").lower() == "true"
-GENERATION_SIZE = int(os.getenv("GENERATION_SIZE", "256"))
+GENERATION_SIZE = int(os.getenv("GENERATION_SIZE", "512"))
 INFERENCE_STEPS = int(os.getenv("INFERENCE_STEPS", "4"))
 GUIDANCE_SCALE = float(os.getenv("GUIDANCE_SCALE", "0"))
 CORS_ORIGINS = [

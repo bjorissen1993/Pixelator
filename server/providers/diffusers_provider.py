@@ -10,8 +10,8 @@ class DiffusersProvider(GenerationProvider):
     """Local Diffusers backend.
 
     This is a generic raster generator. It is not a specialized pixel-art model unless
-    MODEL_ID / PIXEL_MODEL_ID points at one. Generation size is provider-configured
-    (default 256), not assumed to be 512. The Pixelator pipeline is cleanup, not style.
+    MODEL_ID / PIXEL_MODEL_ID points at one. SDXL-Turbo wants ~512px; Pixelator then
+    pixelizes that raster onto the sprite canvas. Native pixel checkpoints stay smaller.
     """
 
     def __init__(self, model_id: str | None = None, native: bool = False):
@@ -61,7 +61,7 @@ class DiffusersProvider(GenerationProvider):
             supportsSkeletonGuidance=False,
             supportsNegativePrompt=self.guidance > 0,
             nativePixelOutput=self.native,
-            preferredSizes=[32, 48, 64, 96, 128, 256],
+            preferredSizes=[32, 48, 64, 96, 128, 256, 512],
             preferredSize=self.size,
             batchIsSequential=True,
         )
@@ -73,7 +73,7 @@ class DiffusersProvider(GenerationProvider):
             )
         else:
             notes = (
-                f"Generic Diffusers (`{self.model_id}`) at {self.size}px, then light sprite cleanup. "
+                f"Generic Diffusers (`{self.model_id}`) at {self.size}px, then Pixelator pixelizes to the sprite canvas. "
                 "Not native pixel-art. Identity uses img2img from the accepted source image when present. "
                 "8-direction generation is one job, sequential internally. "
                 "Set PIXEL_MODEL_ID to a pixel-art checkpoint to switch providers without changing the workflow."

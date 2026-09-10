@@ -70,6 +70,14 @@ def discard_pending(character_id: str):
         _http(exc)
 
 
+@router.post("/api/characters/{character_id}/reprocess-pending")
+def reprocess_pending(character_id: str):
+    try:
+        return generation_service.reprocess_from_source(character_id)
+    except Exception as exc:
+        _http(exc)
+
+
 @router.get("/api/jobs/{job_id}")
 def get_job(job_id: str):
     job = jobs.get(job_id)
