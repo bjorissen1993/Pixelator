@@ -186,7 +186,7 @@ def estimate_head_anchor(image: Image.Image, size: int) -> HeadAnchor:
     )
 
 
-def fit_to_canvas(image: Image.Image, size: int) -> Image.Image:
+def fit_to_canvas(image: Image.Image, size: int, resample: Image.Resampling | None = None) -> Image.Image:
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     cropped = crop_alpha(image.convert("RGBA"))
     max_w = max(1, int(size * 0.88))
@@ -194,7 +194,8 @@ def fit_to_canvas(image: Image.Image, size: int) -> Image.Image:
     ratio = min(max_w / max(1, cropped.width), max_h / max(1, cropped.height))
     target = (max(1, int(cropped.width * ratio)), max(1, int(cropped.height * ratio)))
     shrinking = target[0] < cropped.width or target[1] < cropped.height
-    resample = Image.Resampling.BOX if shrinking else Image.Resampling.NEAREST
+    if resample is None:
+        resample = Image.Resampling.BOX if shrinking else Image.Resampling.NEAREST
     fitted = cropped.resize(target, resample)
     x = (size - fitted.width) // 2
     y = size - fitted.height
@@ -271,8 +272,11 @@ class PixelPipeline:
         remove_bg: bool,
         locked_palette: list[tuple[int, int, int]] | None = None,
         cleanup: bool = True,
+        native: bool = False,
         on_step=None,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
+        if native:
+            return self.process_native(image, size, colors, on_step)
         if on_step:
             on_step("removing background")
         rgba = _prepare_source(remove_background(image, remove_bg))
@@ -308,4 +312,23 @@ class PixelPipeline:
         sprite = flatten_alpha(sprite, cutoff=16)
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
         validation = validate_sprite(sprite, size, colors, source_size=source_size)
+        return sprite, preview, validation
+
+    def process_native(
+        self,
+        image: Image.Image,
+        size: int,
+        colors: int,
+        on_step=None,
+    ) -> tuple[Image.Image, Image.Image, QualityValidation]:
+        if on_step:
+            on_step("fitting native pixel sprite")
+        rgba = flatten_alpha(image.convert("RGBA"), cutoff=32)
+        if rgba.size != (size, size):
+            sprite = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST)
+        else:
+            sprite = rgba
+        sprite = flatten_alpha(sprite, cutoff=32)
+        preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
+        validation = validate_sprite(sprite, size, colors, source_size=size)
         return sprite, preview, validation

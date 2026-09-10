@@ -108,6 +108,8 @@ textarea { resize: vertical; }
 .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 
 .hint { color: #8b9689; font-size: 13px; line-height: 1.5; }
+.hint a { color: #c5d4b8; }
+.hint code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #d7e0cf; }
 .link { background: none; border: 0; color: #c8ea83; padding: 0; font-weight: 700; }
 
 .pixel { image-rendering: pixelated; image-rendering: crisp-edges; background:

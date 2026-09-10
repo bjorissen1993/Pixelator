@@ -21,7 +21,7 @@ export function GenerationPanel() {
       <Section title="Generation">
         <p className="hint">
           Provider: <strong>{provider?.name ?? "unknown"}</strong> · model {provider?.modelId}. Native pixel output:{" "}
-          {provider?.nativePixelOutput ? "yes" : "no, 512px + pixel pipeline"}. Reference img2img:{" "}
+          {provider?.nativePixelOutput ? "yes" : "no — local Turbo cannot match PixelLab. Set PIXELLAB_API_KEY in server/.env"}. Reference:{" "}
           {provider?.supportsReference ? "available" : "not loaded"}.
         </p>
         <div className="action-grid">

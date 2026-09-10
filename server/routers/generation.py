@@ -15,6 +15,7 @@ from models.generation import (
     RefineRequest,
     UpdateAnchorsRequest,
 )
+from providers.registry import get_provider
 from services import generation as generation_service
 from services import jobs
 from services import progress as progress_service
@@ -33,6 +34,14 @@ def _http(exc: Exception):
 @router.post("/api/characters/{character_id}/generate/base")
 def generate_base(character_id: str, payload: GenerateBaseRequest = Body(default_factory=GenerateBaseRequest)):
     try:
+        if get_provider().capabilities.nativePixelOutput:
+            return generation_service.start_job(
+                character_id,
+                "base",
+                "Generate Base",
+                1,
+                lambda job_id: generation_service.generate_base(character_id, payload.seed, payload.override),
+            )
         return generation_service.generate_base(character_id, payload.seed, payload.override)
     except Exception as exc:
         _http(exc)

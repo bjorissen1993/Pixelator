@@ -13,8 +13,8 @@ from persistence.store import asset_path
 from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
 from processing.preview import make_preview, preview_relative
-from prompts.builder import build_prompt
-from providers.base import DirectionSpec
+from prompts.builder import build_prompt, build_pixellab_description
+from providers.base import DirectionSpec, GeneratedImage
 from providers.registry import get_provider
 from services import characters as character_service
 from services import jobs
@@ -86,14 +86,16 @@ def locked_palette(character: CharacterProfile) -> list[tuple[int, int, int]] | 
 
 
 def process_generated(character: CharacterProfile, image: Image.Image):
+    native = get_provider().capabilities.nativePixelOutput
     return pipeline.process(
         image,
         character.spriteSize,
         character.palette.colorCount,
         character.outline,
-        config.ENABLE_BG_REMOVAL,
-        palette_colors(character),
+        False if native else config.ENABLE_BG_REMOVAL,
+        None if native else palette_colors(character),
         on_step=lambda step: progress.set_step(character.id, step),
+        native=native,
     )
 
 
@@ -157,6 +159,13 @@ def reference_image(character: CharacterProfile, direction: Direction | None = N
     return load_image(asset.sourcePath or asset.path)
 
 
+def provider_prompt(character: CharacterProfile, prompt: PromptLayers, override: str = "") -> PromptLayers:
+    if get_provider().capabilities.nativePixelOutput:
+        description = build_pixellab_description(character, override)
+        return prompt.model_copy(update={"masterPrompt": description, "final": description, "negative": ""})
+    return prompt
+
+
 def generate_image(
     character: CharacterProfile,
     prompt: PromptLayers,
@@ -169,13 +178,14 @@ def generate_image(
 ):
     progress.set_step(character.id, "generating source image")
     provider = get_provider()
+    model_prompt = provider_prompt(character, prompt)
     ref = init_image or (reference_image(character, direction, state_id) if use_reference else None)
     used_reference = False
     if ref is not None and provider.capabilities.supportsReferenceImage:
-        generated = provider.generate_from_reference(prompt, ref, seed=seed, strength=strength, init_image=init_image)
+        generated = provider.generate_from_reference(model_prompt, ref, seed=seed, strength=strength, init_image=init_image)
         used_reference = True
     else:
-        generated = provider.generate_direction(prompt, seed=seed)
+        generated = provider.generate_direction(model_prompt, seed=seed)
     sprite, preview, validation = process_generated(character, generated.image)
     return generated, sprite, preview, validation, used_reference
 
@@ -192,9 +202,33 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
     try:
         character = character_service.get_character(character_id)
         prompt = build_prompt(character, override=override)
-        generated, sprite, preview, validation, used_reference = generate_image(
-            character, prompt, use_reference=False, seed=resolve_seed(character, seed, "reuse_base")
-        )
+        provider = get_provider()
+        chosen_seed = resolve_seed(character, seed, "reuse_base")
+        pack = None
+        if hasattr(provider, "create_character_pack"):
+            pack = provider.create_character_pack(
+                provider_prompt(character, prompt, override),
+                seed=chosen_seed,
+                size=character.spriteSize,
+                view=character.camera,
+                outline=character.outline,
+                detail=character.detail,
+                name=character.name,
+                on_step=lambda step: progress.set_step(character.id, step),
+            )
+        if pack:
+            generated = GeneratedImage(pack["south"], pack.get("seed", chosen_seed), prompt)
+            generated.external_id = pack.get("external_id")
+            generated.direction_images = pack.get("directions")
+            sprite, preview, validation = process_generated(character, generated.image)
+            used_reference = False
+            if pack.get("external_id"):
+                character.externalProviderId = provider.info.id
+                character.externalCharacterId = pack["external_id"]
+        else:
+            generated, sprite, preview, validation, used_reference = generate_image(
+                character, prompt, use_reference=False, seed=chosen_seed
+            )
         anchor = estimate_head_anchor(sprite, character.spriteSize)
         asset = make_asset(
             character,
@@ -379,6 +413,15 @@ def generate_direction(
             from_direction=from_dir,  # type: ignore[arg-type]
         )
         chosen_seed = resolve_seed(character, seed if seed is not None else slot.seed, "reuse_base")
+        native_images = native_direction_images(character, prompt, chosen_seed)
+        if native_images.get(direction):
+            asset = _save_direction_image(
+                character, state, slot, direction, native_images[direction], prompt, chosen_seed, from_dir  # type: ignore[arg-type]
+            )
+            character_service.save_character(character)
+            if job_id:
+                jobs.set_progress(job_id, 1, 1, direction, "processing")
+            return {"character": character, "prompt": prompt, "usedReference": True, "asset": asset}
         generated, sprite, preview, validation, used_reference = generate_image(
             character,
             prompt,
@@ -618,6 +661,59 @@ def apply_master_prompt(
     raise ValueError(f"Unknown apply mode: {apply_mode}")
 
 
+def native_direction_images(character: CharacterProfile, prompt: PromptLayers, seed: int | None = None):
+    provider = get_provider()
+    if not provider.capabilities.nativePixelOutput:
+        return {}
+    on_step = lambda step: progress.set_step(character.id, step)
+    if character.externalCharacterId and hasattr(provider, "fetch_rotations"):
+        try:
+            return provider.fetch_rotations(character.externalCharacterId, on_step=on_step)
+        except Exception:
+            pass
+    ref = reference_image(character)
+    if ref is None or not hasattr(provider, "rotate_reference"):
+        return {}
+    return provider.rotate_reference(ref, provider_prompt(character, prompt), seed, on_step=on_step)
+
+
+def _save_direction_image(
+    character: CharacterProfile,
+    state,
+    slot,
+    direction: Direction,
+    image: Image.Image,
+    prompt: PromptLayers,
+    seed: int | None,
+    from_dir: Direction | None,
+):
+    sprite, preview, validation = process_generated(character, image)
+    if not slot.frames:
+        slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
+    relative = f"states/{state.id}/{direction}/full_frame_00.png"
+    asset = make_asset(
+        character,
+        sprite,
+        relative,
+        prompt.final,
+        seed,
+        "full",
+        validation,
+        slot.headAnchor,
+        preview,
+        source=image,
+        negative=prompt.negative,
+        from_direction=from_dir,
+    )
+    if not slot.frames:
+        slot.frames.append(asset)
+    else:
+        slot.frames[0] = asset
+    slot.status = "pending"
+    slot.seed = seed
+    return asset
+
+
 def generate_direction_set(
     character_id: str,
     state_id: str | None = None,
@@ -636,9 +732,29 @@ def generate_direction_set(
     state = character_service.find_state(character, state_id)
     character_service.ensure_slots(state, character.spriteSize)
     wanted = [direction for direction in EXPORT_DIRECTION_ORDER if direction in state.selectedDirections]
-    last = {"character": character, "prompt": build_prompt(character), "usedReference": False, "asset": None}
+    prompt = build_prompt(character, state=state, override=override, from_direction="S")
+    last = {"character": character, "prompt": prompt, "usedReference": False, "asset": None}
+    native_images = native_direction_images(character, prompt, seed)
     total = len([d for d in wanted if not character_service.find_slot(state, d).locked])
     done = 0
+    if native_images:
+        for direction in wanted:
+            slot = character_service.find_slot(state, direction)
+            if slot.locked:
+                continue
+            image = native_images.get(direction)
+            if image is None:
+                continue
+            done += 1
+            if job_id:
+                jobs.set_progress(job_id, done, total or 1, f"{direction} ({done}/{total})", "generating")
+            asset = _save_direction_image(
+                character, state, slot, direction, image, prompt, seed, "S"
+            )
+            last = {"character": character, "prompt": prompt, "usedReference": True, "asset": asset}
+        character_service.save_character(character)
+        last["character"] = character
+        return last
     for direction in wanted:
         slot = character_service.find_slot(state, direction)
         if slot.locked:

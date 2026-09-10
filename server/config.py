@@ -10,6 +10,8 @@ load_dotenv(SERVER_DIR / ".env")
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT_DIR / "data"))
 MODEL_ID = os.getenv("MODEL_ID", "stabilityai/sdxl-turbo")
 PIXEL_MODEL_ID = os.getenv("PIXEL_MODEL_ID", "").strip()
+PIXELLAB_API_KEY = os.getenv("PIXELLAB_API_KEY", "").strip()
+PIXELLAB_API_BASE = os.getenv("PIXELLAB_API_BASE", "https://api.pixellab.ai/v2").rstrip("/")
 DEVICE = os.getenv("DEVICE", "cuda")
 ENABLE_BG_REMOVAL = os.getenv("ENABLE_BG_REMOVAL", "true").lower() == "true"
 GENERATION_SIZE = int(os.getenv("GENERATION_SIZE", "512"))

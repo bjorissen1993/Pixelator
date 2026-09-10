@@ -29,7 +29,7 @@ export function Workspace() {
     <div className="workspace">
       <aside className="sidebar">
         <div className="brand">
-          <span className="eyebrow">Local-first</span>
+          <span className="eyebrow">{provider?.id === "pixellab" ? "PixelLab API" : "Local-first"}</span>
           <h1>Pixelator</h1>
           <p>Character System v2</p>
         </div>

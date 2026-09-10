@@ -23,6 +23,16 @@ export function LibraryScreen() {
 
   return (
     <div className="stack">
+      <Section title="Image provider">
+        <p className="hint">
+          PixelLab quality comes from PixelLab's own model. Paste an API token from{" "}
+          <a href="https://pixellab.ai/account" target="_blank" rel="noreferrer">
+            pixellab.ai/account
+          </a>{" "}
+          into <code>server/.env</code> as <code>PIXELLAB_API_KEY</code>, then restart the backend. Without that key,
+          Pixelator stays on local SDXL-Turbo and will not look like the PixelLab character studio.
+        </p>
+      </Section>
       <Section title="Style profiles">
         <p className="hint">
           Style profiles store palette, camera, outline, shading and prompt defaults. They are not the same as a

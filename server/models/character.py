@@ -158,6 +158,8 @@ class CharacterProfile(BaseModel):
     seed: int | None = None
     seedLocked: bool = False
     styleProfileId: str | None = None
+    externalProviderId: str | None = None
+    externalCharacterId: str | None = None
     identityLock: IdentityLock = Field(default_factory=IdentityLock)
     emotion: EmotionProfile = Field(default_factory=EmotionProfile)
     states: list[CharacterState] = Field(default_factory=list)

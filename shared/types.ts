@@ -188,6 +188,8 @@ export interface CharacterProfile {
   seed?: number | null;
   seedLocked: boolean;
   styleProfileId?: string | null;
+  externalProviderId?: string | null;
+  externalCharacterId?: string | null;
   identityLock: IdentityLock;
   emotion: EmotionProfile;
   states: CharacterState[];

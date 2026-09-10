@@ -76,7 +76,7 @@ class DiffusersProvider(GenerationProvider):
                 f"Generic Diffusers (`{self.model_id}`) at {self.size}px, then Pixelator pixelizes to the sprite canvas. "
                 "Not native pixel-art. Identity uses img2img from the accepted source image when present. "
                 "8-direction generation is one job, sequential internally. "
-                "Set PIXEL_MODEL_ID to a pixel-art checkpoint to switch providers without changing the workflow."
+                "Set PIXELLAB_API_KEY for PixelLab quality, or PIXEL_MODEL_ID for a local pixel checkpoint."
             )
         return ProviderInfo(
             id="pixel-diffusers" if self.native else "diffusers-local",

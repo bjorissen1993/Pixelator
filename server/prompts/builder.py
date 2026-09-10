@@ -89,6 +89,22 @@ def build_prompt(
     return layers
 
 
+def build_pixellab_description(character: CharacterProfile, override: str = "") -> str:
+    parts = [character.masterPrompt]
+    if character.appearance:
+        parts.append(character.appearance)
+    if character.clothing:
+        parts.append(character.clothing)
+    if character.bodyType:
+        parts.append(character.bodyType)
+    spirit = character.spirit
+    if spirit.enabled or spirit.noLegs:
+        parts.append(spirit.notes or "legless ghost, no legs, no boots, lower body fades into spectral mist, floating spirit tail")
+    if override.strip():
+        parts.append(override.strip())
+    return _join(parts)[:2000]
+
+
 def _head_variant_clause(variant: HeadVariant) -> str:
     return {
         "center": "head facing center, eyes forward",

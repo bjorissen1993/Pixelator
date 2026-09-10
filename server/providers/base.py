@@ -14,6 +14,8 @@ class GeneratedImage:
         self.image = image
         self.seed = seed
         self.prompt = prompt
+        self.external_id: str | None = None
+        self.direction_images: dict[Direction, Image.Image] | None = None
 
 
 @dataclass
@@ -35,6 +37,9 @@ class GenerationProvider(ABC):
     @property
     def capabilities(self) -> ProviderCapabilities:
         return self.info.capabilities
+
+    def create_character_pack(self, *args, **kwargs):
+        return None
 
     @abstractmethod
     def generate_base_character(self, prompt: PromptLayers, seed: int | None = None) -> GeneratedImage:
