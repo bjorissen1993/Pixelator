@@ -125,7 +125,7 @@ export function GenerationStatus({
     const payload = typeof error === "string" ? { message: error } : error;
     return (
       <div className="banner error" role="alert">
-        <strong>{payload.message}</strong>
+        <strong>{payload.message || "Generation failed"}</strong>
         {payload.traceId ? <p className="hint">Trace {payload.traceId}</p> : null}
         {payload.context && Object.keys(payload.context).length ? (
           <p className="hint">

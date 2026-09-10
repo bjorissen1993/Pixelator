@@ -5,7 +5,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, Field, PixelImage, Section, Select, TextInput, Toggle } from "./ui";
 
 export function StatesScreen() {
-  const { character, templates, selectedStateId, setSelectedStateId, setSection, run, setCharacter, applyResult, generating, busy } =
+  const { character, templates, selectedStateId, setSelectedStateId, setSection, run, setCharacter, generating, busy } =
     useWorkspace();
   const [creating, setCreating] = useState(false);
   const [templateId, setTemplateId] = useState("idle");
@@ -43,10 +43,7 @@ export function StatesScreen() {
                   <Button
                     variant="secondary"
                     onClick={() =>
-                      run(`Generating ${state.name}`, async () => {
-                        const result = await api.generateState(character.id, state.id);
-                        if (result) applyResult(result);
-                      })
+                      run(`Generating ${state.name}`, () => api.generateState(character.id, state.id))
                     }
                     disabled={generating || !!busy}
                   >

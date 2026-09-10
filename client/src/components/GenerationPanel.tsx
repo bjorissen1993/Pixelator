@@ -3,18 +3,12 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, PipelineSteps, Section } from "./ui";
 
 export function GenerationPanel() {
-  const { character, selectedStateId, selectedDirection, provider, prompt, usedReference, busy, generating, progress, run, applyResult } =
+  const { character, selectedStateId, selectedDirection, provider, prompt, usedReference, busy, generating, progress, run } =
     useWorkspace();
   if (!character) return null;
   const state = character.states.find((item) => item.id === selectedStateId);
 
-  const go = (label: string, fn: () => Promise<unknown>) =>
-    run(label, async () => {
-      const result = await fn();
-      if (result && typeof result === "object" && result !== null && "character" in result) {
-        applyResult(result as Awaited<ReturnType<typeof api.generateBase>>);
-      }
-    });
+  const go = (label: string, fn: () => Promise<unknown>) => run(label, fn);
 
   return (
     <div className="stack">

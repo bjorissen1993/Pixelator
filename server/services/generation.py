@@ -510,7 +510,9 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
                 name=character.name,
                 on_step=lambda step: progress.set_step(character.id, step),
             )
-        progress.set_step(character.id, "Generating South")
+        if getattr(provider, "txt2img", True) is None:
+            _job_step(character.id, "Loading model (first run can take several minutes)", "generating")
+        _job_step(character.id, "Generating South", "generating")
         if pack:
             generated = GeneratedImage(pack["south"], pack.get("seed", chosen_seed), prompt)
             generated.external_id = pack.get("external_id")

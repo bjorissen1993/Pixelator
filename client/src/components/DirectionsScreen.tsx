@@ -12,7 +12,6 @@ export function DirectionsScreen() {
     selectedDirection,
     setSelectedDirection,
     run,
-    applyResult,
     busy,
     generating,
   } = useWorkspace();
@@ -28,10 +27,7 @@ export function DirectionsScreen() {
           <Button
             variant="secondary"
             onClick={() =>
-              run("Generating missing directions", async () => {
-                const result = await api.generateMissing(character.id, state.id);
-                if (result) applyResult(result);
-              })
+              run("Generating missing directions", () => api.generateMissing(character.id, state.id))
             }
             disabled={generating || !!busy}
           >
@@ -57,13 +53,12 @@ export function DirectionsScreen() {
                 variant="ghost"
                 disabled={!enabled || generating || !!busy}
                 onClick={() =>
-                  run(`Regenerating ${direction}`, async () => {
-                    const result = await api.generateDirection(character.id, {
+                  run(`Regenerating ${direction}`, () =>
+                    api.generateDirection(character.id, {
                       stateId: state.id,
                       direction,
-                    });
-                    if (result) applyResult(result);
-                  })
+                    }),
+                  )
                 }
               >
                 Regen

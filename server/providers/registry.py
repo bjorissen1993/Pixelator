@@ -7,8 +7,17 @@ from providers.pixellab_provider import PixelLabProvider
 from providers.unconfigured import UnconfiguredProvider
 
 
+def _is_native_pixel_checkpoint(model_id: str) -> bool:
+    name = (model_id or "").lower()
+    if not name or config.is_turbo_model(name):
+        return False
+    if "sdxl" in name or "stable-diffusion" in name:
+        return False
+    return True
+
+
 def _pixel_provider(model_id: str) -> DiffusersProvider:
-    return DiffusersProvider(model_id=model_id, native=not config.is_turbo_model(model_id))
+    return DiffusersProvider(model_id=model_id, native=_is_native_pixel_checkpoint(model_id))
 
 
 def _turbo_fallback() -> DiffusersProvider:

@@ -2,13 +2,16 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { Workspace } from "./components/Workspace";
+import { ErrorBoundary } from "./ErrorBoundary";
 import "./styles.css";
 
 function App() {
   return (
-    <WorkspaceProvider>
-      <Workspace />
-    </WorkspaceProvider>
+    <ErrorBoundary>
+      <WorkspaceProvider>
+        <Workspace />
+      </WorkspaceProvider>
+    </ErrorBoundary>
   );
 }
 

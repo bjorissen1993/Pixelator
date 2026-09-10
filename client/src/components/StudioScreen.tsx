@@ -88,7 +88,6 @@ export function StudioScreen() {
     busy,
     progress,
     run,
-    applyResult,
     setCharacter,
     templates,
   } = useWorkspace();
@@ -154,10 +153,7 @@ export function StudioScreen() {
             </p>
           </div>
           <div className="chip-row">
-            <Button disabled={locked} onClick={() => run("Generating south", async () => {
-              const result = await api.generateBase(character.id, { seedMode: character.seedLocked ? "locked" : "random" });
-              if (result) applyResult(result);
-            })}>
+            <Button disabled={locked} onClick={() => run("Generating south", () => api.generateBase(character.id, { seedMode: character.seedLocked ? "locked" : "random" }))}>
               Generate
             </Button>
             <Button
@@ -195,18 +191,12 @@ export function StudioScreen() {
                   variant="secondary"
                   disabled={locked || (!character.pendingBase && !character.acceptedBase)}
                   onClick={() =>
-                    run("Re-pixelizing source", async () => {
-                      const result = await api.reprocessPending(character.id);
-                      if (result) applyResult(result);
-                    }, { generating: true })
+                    run("Re-pixelizing source", () => api.reprocessPending(character.id), { generating: true })
                   }
                 >
                   Re-pixelize
                 </Button>
-                <Button variant="secondary" disabled={locked || !character.acceptedBase} onClick={() => run("Generating variation", async () => {
-                  const result = await api.generateVariation(character.id);
-                  if (result) applyResult(result);
-                })}>
+                <Button variant="secondary" disabled={locked || !character.acceptedBase} onClick={() => run("Generating variation", () => api.generateVariation(character.id))}>
                   Variation
                 </Button>
               </>
@@ -356,10 +346,7 @@ export function StudioScreen() {
                     <Button
                       disabled={locked || !character.acceptedBase}
                       onClick={() =>
-                        run(`Generating ${item.name}`, async () => {
-                          const result = await api.generateState(character.id, item.id);
-                          if (result) applyResult(result);
-                        })
+                        run(`Generating ${item.name}`, () => api.generateState(character.id, item.id))
                       }
                     >
                       Generate
@@ -451,10 +438,9 @@ export function StudioScreen() {
                   variant="secondary"
                   disabled={locked || selectedSlot.locked}
                   onClick={() =>
-                    run(`Regenerating ${selectedDirection}`, async () => {
-                      const result = await api.generateDirection(character.id, { stateId: state.id, direction: selectedDirection });
-                      if (result) applyResult(result);
-                    })
+                    run(`Regenerating ${selectedDirection}`, () =>
+                      api.generateDirection(character.id, { stateId: state.id, direction: selectedDirection }),
+                    )
                   }
                 >
                   Regenerate
@@ -486,15 +472,14 @@ export function StudioScreen() {
                   variant="secondary"
                   disabled={locked || !selectedSlot.frames[0]}
                   onClick={() =>
-                    run("Refining from this sprite", async () => {
-                      const result = await api.refine(character.id, {
+                    run("Refining from this sprite", () =>
+                      api.refine(character.id, {
                         stateId: state.id,
                         direction: selectedDirection,
                         useAsReference: true,
                         strength: refineStrength,
-                      });
-                      if (result) applyResult(result);
-                    })
+                      }),
+                    )
                   }
                 >
                   Refine

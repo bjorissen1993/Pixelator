@@ -9,28 +9,33 @@ Generation Engine v2 is a provider abstraction. **SDXL-Turbo is fallback only** 
 - Python 3.11+
 - A CUDA GPU is strongly recommended for generation
 
-## 1. Backend
+## Start
+From the repo root, after the one-time setup below:
+
+```bash
+npm start
+```
+
+That opens backend and frontend in two windows. UI: `http://localhost:5173` (or 5174/5175 if that port is taken). Vite proxies `/api`, `/health`, and `/data` to FastAPI.
+
+Separate commands:
+
+```bash
+npm run backend
+npm run frontend
+```
+
+## One-time setup
 ```bash
 cd server
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
-pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 cp .env.example .env
-uvicorn app:app --reload --port 8000
-```
 
-## 2. Frontend
-```bash
-cd client
+cd ../client
 npm install
-npm run dev
 ```
-
-Open the printed localhost URL. Vite proxies `/api`, `/health`, and `/data` to FastAPI.
 
 ## Environment
 ```

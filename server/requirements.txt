@@ -3,6 +3,8 @@ uvicorn[standard]==0.35.0
 pydantic==2.11.7
 python-dotenv==1.1.1
 Pillow==11.3.0
+# Default pip torch is CPU-only on Windows. For an NVIDIA GPU install a CUDA wheel, e.g.
+#   .venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 torch>=2.4.0
 diffusers>=0.35.0
 transformers>=4.55.0

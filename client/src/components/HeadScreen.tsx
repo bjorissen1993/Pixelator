@@ -6,7 +6,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, Field, PixelImage, Section, TextInput } from "./ui";
 
 export function HeadScreen() {
-  const { character, selectedStateId, selectedDirection, run, applyResult, setCharacter, generating, busy } = useWorkspace();
+  const { character, selectedStateId, selectedDirection, run, setCharacter, generating, busy } = useWorkspace();
   const state = character?.states.find((item) => item.id === selectedStateId);
   const slot = state?.directions.find((item) => item.direction === selectedDirection);
   const sprite = slot?.frames[0] ?? character?.acceptedBase?.sprite ?? character?.pendingBase;
@@ -49,10 +49,7 @@ export function HeadScreen() {
           <Button
             disabled={generating || !!busy}
             onClick={() =>
-              run("Generating head variants", async () => {
-                const result = await api.generateHeadVariants(character.id, state.id, selectedDirection);
-                if (result) applyResult(result);
-              })
+              run("Generating head variants", () => api.generateHeadVariants(character.id, state.id, selectedDirection))
             }
           >
             Generate head variants

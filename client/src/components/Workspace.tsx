@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
-import { SECTIONS, useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/WorkspaceContext";
+import { SECTIONS } from "../sections";
 import { GenerationStatus, Button, TextInput } from "./ui";
 import { CharacterScreen } from "./CharacterScreen";
 import { EmotionScreen } from "./EmotionScreen";
@@ -103,6 +104,15 @@ export function Workspace() {
           <div className="badge">{character?.spriteSize ?? 48}×{character?.spriteSize ?? 48}</div>
         </header>
         <GenerationStatus error={error} busy={busy} generating={generating} progress={progress} />
+        {provider?.id === "unconfigured" && !error ? (
+          <div className="banner error" role="status">
+            <strong>No generation provider is configured.</strong>
+            <p>
+              Generate will not produce a sprite until you set PIXELATOR_MODEL_ID or PIXELLAB_API_KEY in server/.env
+              and restart the backend. Open the Vite URL (localhost:5173), not port 8000.
+            </p>
+          </div>
+        ) : null}
         <div className="content">
           {section === "studio" && <StudioScreen />}
           {section === "identity" && (

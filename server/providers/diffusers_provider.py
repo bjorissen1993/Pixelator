@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 from PIL import Image
 
 import config
+
+logger = logging.getLogger("pixelator.diffusers")
 from models.character import GenerationDebug
 from models.common import ProviderCapabilities, ProviderInfo
 from models.generation import PromptLayers
@@ -23,9 +26,11 @@ def _resolve_dtype(torch, device: str):
         "fp32": torch.float32,
         "float32": torch.float32,
     }
+    if device != "cuda":
+        return torch.float32
     if name in mapping:
         return mapping[name]
-    return torch.float16 if device == "cuda" else torch.float32
+    return torch.float16
 
 
 class DiffusersProvider(GenerationProvider):
@@ -45,8 +50,7 @@ class DiffusersProvider(GenerationProvider):
         self.fallback_turbo = _is_turbo(self.model_id)
         self.native = bool(native) and not self.fallback_turbo
         self.working_size = config.clamp_sprite_size(config.WORKING_SIZE, 48)
-        # Fallback Turbo is the only path that still uses a 512 photographic canvas.
-        self.size = 512 if self.fallback_turbo else self.working_size
+        self.size = self._internal_size()
         self.steps = 4 if self.fallback_turbo else max(config.INFERENCE_STEPS, 8)
         self.guidance = 0.0 if self.fallback_turbo else max(config.GUIDANCE_SCALE, 1.0)
         self.lora_path = config.PIXELATOR_LORA
@@ -62,31 +66,50 @@ class DiffusersProvider(GenerationProvider):
             return
         try:
             import torch
-            from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image
+            from diffusers import AutoPipelineForText2Image, DiffusionPipeline
         except Exception as exc:
             raise RuntimeError(f"Could not import Diffusers backend: {exc}") from exc
 
         self.torch = torch
         requested = config.PIXELATOR_DEVICE
         self.device = requested if requested == "cpu" or torch.cuda.is_available() else "cpu"
+        if requested != "cpu" and self.device == "cpu":
+            logger.warning("CUDA was requested but this PyTorch build has no GPU. Using CPU until a CUDA wheel is installed.")
         dtype = _resolve_dtype(torch, self.device)
         self.dtype_name = str(dtype).replace("torch.", "")
-        self.txt2img = AutoPipelineForText2Image.from_pretrained(self.model_id, torch_dtype=dtype)
+        try:
+            self.txt2img = AutoPipelineForText2Image.from_pretrained(self.model_id, torch_dtype=dtype)
+        except Exception:
+            self.txt2img = DiffusionPipeline.from_pretrained(self.model_id, torch_dtype=dtype)
         self.txt2img = self.txt2img.to(self.device)
         self._load_lora(self.txt2img)
         self._load_ip_adapter(self.txt2img)
         self._load_controlnet()
-        try:
-            self.img2img = AutoPipelineForImage2Image.from_pipe(self.txt2img)
-        except Exception:
-            try:
-                self.img2img = AutoPipelineForImage2Image.from_pretrained(self.model_id, torch_dtype=dtype)
-                self.img2img = self.img2img.to(self.device)
-                self._load_lora(self.img2img)
-                self._load_ip_adapter(self.img2img)
-            except Exception:
-                self.img2img = None
+        self.img2img = self._load_img2img(dtype)
         self.img2img_ready = self.img2img is not None
+
+    def _load_img2img(self, dtype):
+        try:
+            from diffusers import AutoPipelineForImage2Image
+            pipe = AutoPipelineForImage2Image.from_pipe(self.txt2img)
+            return pipe
+        except Exception:
+            pass
+        try:
+            from diffusers import StableDiffusionXLImg2ImgPipeline
+            pipe = StableDiffusionXLImg2ImgPipeline.from_pipe(self.txt2img)
+            return pipe
+        except Exception:
+            pass
+        try:
+            from diffusers import AutoPipelineForImage2Image
+            pipe = AutoPipelineForImage2Image.from_pretrained(self.model_id, torch_dtype=dtype)
+            pipe = pipe.to(self.device)
+            self._load_lora(pipe)
+            self._load_ip_adapter(pipe)
+            return pipe
+        except Exception:
+            return None
 
     def _load_lora(self, pipe) -> None:
         if not self.lora_path:
@@ -125,6 +148,16 @@ class DiffusersProvider(GenerationProvider):
             self.ip_adapter_loaded = True
         except Exception:
             self.ip_adapter_loaded = False
+
+    def _internal_size(self) -> int:
+        if self.fallback_turbo:
+            return 512
+        if self.native:
+            return self.working_size
+        name = self.model_id.lower()
+        if "sdxl" in name or "xl-base" in name:
+            return 512
+        return max(self.working_size, 256)
 
     def _load_controlnet(self) -> None:
         # Reserved for a future ControlNet generate path. Do not report it as active until wired.
@@ -182,9 +215,10 @@ class DiffusersProvider(GenerationProvider):
                 "Not a trained Pixelator identity lock. 8-direction generation is sequential from neighbor references."
             )
         else:
+            lora = f" LoRA `{self.lora_path}`." if self.lora_path else ""
             notes = (
-                f"Diffusers (`{self.model_id}`) at {self.size}px working canvas, then nearest/block downsample to the sprite. "
-                "Identity uses real img2img from the accepted/neighbor reference when the pipeline supports it."
+                f"Local Diffusers (`{self.model_id}`) at {self.size}px, then nearest-neighbor fit to the sprite canvas.{lora} "
+                "rotateSprite uses the reference PNG as img2img. This is not PixelLab."
             )
         return ProviderInfo(
             id="pixel-diffusers" if self.native and not self.fallback_turbo else "diffusers-local",
@@ -298,7 +332,7 @@ class DiffusersProvider(GenerationProvider):
 
     def generate_south(self, prompt: PromptLayers, seed: int | None = None, size: int = 48, view: str = "") -> GeneratedImage:
         previous = self.size
-        if not self.fallback_turbo:
+        if self.native:
             self.size = max(32, min(128, size))
         try:
             generated = self._txt(prompt, seed)
@@ -325,7 +359,7 @@ class DiffusersProvider(GenerationProvider):
         if reference is None:
             raise ValueError("rotateSprite requires a real reference image")
         previous = self.size
-        if not self.fallback_turbo:
+        if self.native:
             self.size = max(32, min(128, size))
         try:
             generated = self._img(prompt, reference, seed, strength, init_image=reference)

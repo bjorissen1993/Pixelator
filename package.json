@@ -1,0 +1,10 @@
+{
+  "name": "pixelator",
+  "private": true,
+  "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
+    "dev": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
+    "backend": "cd server && .venv\\Scripts\\python.exe -m uvicorn app:app --reload --reload-exclude .venv --host 127.0.0.1 --port 8000",
+    "frontend": "npm --prefix client run dev"
+  }
+}

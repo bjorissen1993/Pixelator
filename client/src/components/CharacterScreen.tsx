@@ -50,7 +50,7 @@ const LOCK_LABELS: Array<[keyof IdentityLock, string]> = [
 ];
 
 export function CharacterScreen() {
-  const { character, selectedStateId, selectedDirection, busy, generating, progress, run, applyResult, setCharacter } = useWorkspace();
+  const { character, selectedStateId, selectedDirection, busy, generating, progress, run, setCharacter } = useWorkspace();
   const [draft, setDraft] = useState<CharacterProfile | null>(character);
 
   useEffect(() => {
@@ -101,15 +101,13 @@ export function CharacterScreen() {
   const applyMaster = (applyMode: string) =>
     run(
       "Updating master prompt",
-      async () => {
-        const result = await api.applyMasterPrompt(character.id, {
+      () =>
+        api.applyMasterPrompt(character.id, {
           masterPrompt: draft.masterPrompt,
           applyMode,
           stateId: selectedStateId,
           direction: selectedDirection,
-        });
-        if (result) applyResult(result);
-      },
+        }),
       { generating: applyMode !== "future_only" },
     );
 
@@ -360,10 +358,7 @@ export function CharacterScreen() {
                 <Button
                   disabled={locked}
                   onClick={() =>
-                    run("Generating base", async () => {
-                      const result = await api.generateBase(character.id);
-                      if (result) applyResult(result);
-                    })
+                    run("Generating base", () => api.generateBase(character.id))
                   }
                 >
                   Generate base
@@ -385,10 +380,7 @@ export function CharacterScreen() {
                   variant="secondary"
                   disabled={locked || !character.acceptedBase}
                   onClick={() =>
-                    run("Generating variation", async () => {
-                      const result = await api.generateVariation(character.id);
-                      if (result) applyResult(result);
-                    })
+                    run("Generating variation", () => api.generateVariation(character.id))
                   }
                 >
                   Generate variation
