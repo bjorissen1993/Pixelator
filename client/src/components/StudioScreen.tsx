@@ -22,10 +22,16 @@ function QualityBlock({ asset }: { asset?: SpriteAsset }) {
   return (
     <div className="quality-block">
       <p className="hint">
-        Quality score <strong>{validation.score ?? "—"}</strong>
+        Quality <strong>{validation.score ?? "—"}</strong>
+        {validation.directionScore != null ? ` · facing ${validation.directionScore}` : ""}
         {validation.compositionScore != null ? ` · composition ${validation.compositionScore}` : ""}
-        {validation.ok ? "" : " · has errors"}
+        {validation.ok ? "" : " · not a good candidate"}
       </p>
+      {validation.artifactWarning || validation.artifactDetected ? (
+        <p className="hint warn-line">Possible duplicate figure / artifact</p>
+      ) : null}
+      {validation.silhouetteWarning ? <p className="hint warn-line">Silhouette warning</p> : null}
+      {validation.spiritFormWarning ? <p className="hint warn-line">Spirit-form warning</p> : null}
       {validation.warnings.length ? (
         <ul className="quality-warnings">
           {validation.warnings.map((warning) => (
@@ -58,6 +64,10 @@ function DebugBlock({ asset }: { asset?: SpriteAsset }) {
         <div><dt>reference</dt><dd>{debug.usedReference ? `${debug.referenceDirection || "base"} ${debug.referenceAssetId || ""}` : "none"}</dd></div>
         <div><dt>working / target</dt><dd>{debug.workingResolution ?? "—"} → {debug.targetResolution ?? "—"}</dd></div>
         <div><dt>palette</dt><dd>{debug.paletteMode || "—"}</dd></div>
+        <div><dt>target direction</dt><dd>{debug.targetDirection || "—"}</dd></div>
+        <div><dt>facing score</dt><dd>{debug.directionScore ?? "—"}</dd></div>
+        <div><dt>artifact detection</dt><dd>{debug.artifactDetected ? "triggered" : "clear"}</dd></div>
+        <div><dt>composition failed</dt><dd>{debug.compositionFailed ? "yes" : "no"}</dd></div>
         <div><dt>crop retries</dt><dd>{debug.cropRetries ?? 0}</dd></div>
         <div><dt>prompt</dt><dd>{debug.prompt || "—"}</dd></div>
         <div><dt>negative</dt><dd>{debug.negativePrompt || "—"}</dd></div>
@@ -104,8 +114,19 @@ export function StudioScreen() {
   const removeDirection = (direction: Direction) => {
     if (!state) return;
     if (!window.confirm("Remove this direction? This will clear the sprite and set the slot back to missing.")) return;
-    setSelectedDirection(direction);
-    run("Removing direction", () => api.removeDirection(character.id, state.id, direction).then(setCharacter), { generating: false });
+    run("Removing direction", async () => {
+      const next = await api.removeDirection(character.id, state.id, direction);
+      setCharacter(next);
+      const nextState = next.states.find((item) => item.id === state.id) ?? next.states[0];
+      const slot = nextState?.directions.find((item) => item.direction === direction);
+      if (!slot || slot.status === "missing" || !slot.frames[0]) {
+        const fallback = (["S", ...EXPORT_DIRECTION_ORDER.filter((item) => item !== "S")] as Direction[]).find((item) => {
+          const found = nextState?.directions.find((entry) => entry.direction === item);
+          return Boolean(found?.frames[0] && item !== direction);
+        });
+        setSelectedDirection(fallback ?? "S");
+      }
+    }, { generating: false });
   };
 
   return (
@@ -118,7 +139,7 @@ export function StudioScreen() {
             <p>
               {character.species} · {character.camera} · {character.outline} outline · {character.shading} shading ·{" "}
               {character.spriteSize}px
-              {character.acceptedBase ? " · identity locked" : " · Generate All starts with South, then the other facings"}
+              {character.acceptedBase ? " · identity locked" : " · accept a valid South base before filling other facings"}
             </p>
           </div>
           <div className="chip-row">
@@ -132,10 +153,10 @@ export function StudioScreen() {
               disabled={locked || !state}
               title={
                 acceptedInvalid.length
-                  ? "Accepted base failed full-body validation"
+                  ? "Accepted base is invalid and will not be used as a reference"
                   : character.acceptedBase
-                    ? "Generate all 8 directions from the accepted base"
-                    : "Generate South first, then the other 7 directions"
+                    ? "Generate remaining directions from the accepted base"
+                    : "Generate and validate South first, then the other facings if South is usable"
               }
               onClick={generateEight}
             >
@@ -224,30 +245,43 @@ export function StudioScreen() {
             <h2>{state ? `${state.name} directions` : "Directions"}</h2>
           </header>
           <p className="hint">
-            Center is the accepted identity, or South if no base is accepted yet.
-            Generate creates South (S). Generate All Directions makes South first when needed, then the other facings.
+            Center is the selected direction preview. Accepted Base stays the identity reference above.
+            Generate creates South (S). Generate All Directions validates South first and only continues when that sprite is usable.
             Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
           </p>
           <div className="compass studio-compass">
-            {GRID.map((cell, index) => {
+            {GRID.map((cell) => {
               if (cell === "REF") {
+                const selectedStatus = slotStatus(selectedSlot);
+                const selectedAsset = selectedSlot?.frames[0] ?? (selectedDirection === "S" ? refAsset : undefined);
                 return (
-                  <div key="ref" className="compass-core ref-cell">
-                    <span>REF</span>
-                    <PixelImage asset={refAsset} empty="No base" size={character.spriteSize} scale={3} />
+                  <div key="selected" className={`compass-core selected-preview status-${selectedStatus}`}>
+                    <span className="selected-label">
+                      Selected · {selectedDirection}
+                      <span className={`status-badge status-${selectedStatus}`}>{selectedStatus}</span>
+                    </span>
+                    <PixelImage
+                      asset={selectedAsset}
+                      empty={`No ${selectedDirection} sprite`}
+                      size={character.spriteSize}
+                      scale={7}
+                    />
                   </div>
                 );
               }
               const slot = state?.directions.find((item) => item.direction === cell);
               const status = slotStatus(slot);
               const selected = selectedDirection === cell;
+              const invalid = status === "rejected" || slot?.frames[0]?.validation?.ok === false;
               return (
                 <div key={cell} className={`compass-cell ${selected ? "active" : ""} status-${status}`}>
                   <button type="button" className="compass-select" onClick={() => setSelectedDirection(cell)}>
-                    <span>
-                      {cell} · {status}
+                    <span className="dir-meta">
+                      <span className="dir-name">{cell}</span>
+                      <span className={`status-badge status-${status}`}>{status}</span>
+                      {invalid ? <span className="warn-dot" title="Bad candidate">!</span> : null}
                     </span>
-                    <PixelImage asset={slot?.frames[0]} empty="missing" size={character.spriteSize} scale={3} />
+                    <PixelImage asset={slot?.frames[0]} empty="missing" size={character.spriteSize} scale={2} />
                   </button>
                   {status !== "missing" && status !== "locked" ? (
                     <button

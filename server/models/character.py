@@ -100,7 +100,14 @@ class QualityValidation(BaseModel):
     ok: bool = True
     score: int = 100
     compositionScore: int = 100
+    directionScore: int = 100
     validForBase: bool = True
+    validForDirection: bool = True
+    artifactWarning: bool = False
+    artifactDetected: bool = False
+    silhouetteWarning: bool = False
+    spiritFormWarning: bool = False
+    compositionFailed: bool = False
     warnings: list[QualityWarning] = Field(default_factory=list)
     futureChecks: list[str] = Field(default_factory=list)
     occupancy: float = 0
@@ -142,6 +149,10 @@ class GenerationDebug(BaseModel):
     usedIpAdapter: bool = False
     cropRetries: int = 0
     retryTriggered: bool = False
+    targetDirection: Direction | None = None
+    artifactDetected: bool = False
+    compositionFailed: bool = False
+    directionScore: int | None = None
 
 
 class SpriteAsset(BaseModel):

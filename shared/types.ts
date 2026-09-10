@@ -108,7 +108,14 @@ export interface QualityValidation {
   ok: boolean;
   score?: number;
   compositionScore?: number;
+  directionScore?: number;
   validForBase?: boolean;
+  validForDirection?: boolean;
+  artifactWarning?: boolean;
+  artifactDetected?: boolean;
+  silhouetteWarning?: boolean;
+  spiritFormWarning?: boolean;
+  compositionFailed?: boolean;
   warnings: QualityWarning[];
   futureChecks: string[];
   occupancy?: number;
@@ -150,6 +157,10 @@ export interface GenerationDebug {
   usedIpAdapter: boolean;
   cropRetries?: number;
   retryTriggered?: boolean;
+  targetDirection?: Direction | null;
+  artifactDetected?: boolean;
+  compositionFailed?: boolean;
+  directionScore?: number | null;
 }
 
 export interface SpriteAsset {

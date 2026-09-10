@@ -21,6 +21,21 @@ INVALID_BASE_MESSAGES = {
     "missing_spirit_tail": "Invalid base: missing lower body / spirit tail",
 }
 
+ARTIFACT_CODES = {
+    "possible_duplicate_figure",
+    "extra_characters",
+    "extra_artifact",
+    "floating_artifact",
+    "probable_extra_limbs",
+}
+SILHOUETTE_CODES = {
+    "silhouette_incomplete",
+    "height_inconsistent",
+    "silhouette_width_inconsistent",
+    "center_of_mass_shift",
+}
+SPIRIT_CODES = {"missing_spirit_tail", "lower_spirit_body_missing", "missing_lower_body"}
+
 CROP_CODES = {
     "likely_cropped",
     "touches_edges",
@@ -58,7 +73,38 @@ def is_valid_base(validation: QualityValidation | None) -> bool:
     return not invalid_base_reasons(validation)
 
 
-def _count_blobs(pixels, width: int, height: int) -> tuple[int, int]:
+def invalid_direction_reasons(validation: QualityValidation | None) -> list[str]:
+    if validation is None:
+        return ["Direction output failed validation"]
+    reasons: list[str] = []
+    if validation.artifactDetected or validation.artifactWarning:
+        reasons.append("Possible duplicate figure / artifact")
+    if validation.portraitFailed:
+        reasons.append("Likely portrait / cropped bust")
+    if validation.cropFailed:
+        reasons.append("Likely cropped or incomplete silhouette")
+    if validation.spiritFormWarning:
+        reasons.append("Missing lower spirit body")
+    if any(w.code == "direction_likely_incorrect" for w in validation.warnings):
+        reasons.append("Facing direction looks incorrect")
+    if any(w.code == "palette_mismatch" for w in validation.warnings):
+        reasons.append("Large palette inconsistency")
+    if any(w.code in {"sprite_too_small", "too_much_transparency"} for w in validation.warnings):
+        reasons.append("Sprite too small on canvas")
+    if any(w.code == "too_large_for_canvas" for w in validation.warnings):
+        reasons.append("Sprite too large on canvas")
+    if validation.validForDirection is False and not reasons:
+        reasons.append("Direction output is not a usable single-character sprite")
+    return reasons
+
+
+def is_valid_direction(validation: QualityValidation | None) -> bool:
+    if validation is None:
+        return False
+    return bool(validation.validForDirection and validation.ok)
+
+
+def _analyze_blobs(pixels, width: int, height: int) -> dict:
     scale = max(1, max(width, height) // 80)
     sw = max(1, width // scale)
     sh = max(1, height // scale)
@@ -86,9 +132,20 @@ def _count_blobs(pixels, width: int, height: int) -> tuple[int, int]:
                     seen[ny][nx] = True
                     stack.append((nx, ny))
             sizes.append(size)
+    sizes.sort(reverse=True)
     opaque = sum(sizes) or 1
+    main = sizes[0] if sizes else 0
     significant = sum(1 for size in sizes if size >= max(4, int(opaque * 0.05)))
-    return len(sizes), significant
+    major = sum(1 for size in sizes if size >= max(8, int(opaque * 0.12)))
+    stray = sum(1 for size in sizes[1:] if 3 <= size < max(8, int(opaque * 0.12)))
+    second = sizes[1] if len(sizes) > 1 else 0
+    return {
+        "blobs": len(sizes),
+        "significant_blobs": significant,
+        "major_blobs": major,
+        "stray_blobs": stray,
+        "second_ratio": (second / main) if main else 0.0,
+    }
 
 
 def _metrics(image: Image.Image) -> dict:
@@ -152,14 +209,14 @@ def _metrics(image: Image.Image) -> dict:
         upper_in_bbox = upper_bbox / opaque
         lower_in_bbox = lower_bbox / opaque
         lower_quarter_in_bbox = lower_quarter / opaque
-        blobs, significant = _count_blobs(pixels, width, height)
+        blobs = _analyze_blobs(pixels, width, height)
     else:
         bbox_w = bbox_h = 0
         center_x = center_y = 0.5
         upper_in_bbox = lower_in_bbox = lower_quarter_in_bbox = 0.0
         min_x = min_y = 0
         max_x = max_y = 0
-        blobs = significant = 0
+        blobs = {"blobs": 0, "significant_blobs": 0, "major_blobs": 0, "stray_blobs": 0, "second_ratio": 0.0}
     return {
         "opaque": opaque,
         "occupancy": occupancy,
@@ -174,8 +231,11 @@ def _metrics(image: Image.Image) -> dict:
         "aspect": bbox_w / max(1, bbox_h),
         "center_x": center_x,
         "center_y": center_y,
-        "blobs": blobs,
-        "significant_blobs": significant,
+        "blobs": blobs["blobs"],
+        "significant_blobs": blobs["significant_blobs"],
+        "major_blobs": blobs["major_blobs"],
+        "stray_blobs": blobs["stray_blobs"],
+        "second_ratio": blobs["second_ratio"],
         "left_mass": left_mass,
         "right_mass": opaque - left_mass,
         "top_band": top_band,
@@ -204,12 +264,17 @@ def _direction_warning(direction: Direction | None, metrics: dict) -> QualityWar
     right = metrics["right_mass"]
     total = max(1, left + right)
     bias = (right - left) / total
-    if direction == "E" and bias < -0.22:
-        return _warn("direction_likely_incorrect", "Facing looks left-heavy for an east view")
-    if direction == "W" and bias > 0.22:
-        return _warn("direction_likely_incorrect", "Facing looks right-heavy for a west view")
+    severity: WarningSeverity = "warning"
+    if direction in ("E", "NE", "SE") and bias < -0.40:
+        return _warn("direction_likely_incorrect", f"Facing looks left-heavy for {direction}", "error")
+    if direction in ("W", "NW", "SW") and bias > 0.40:
+        return _warn("direction_likely_incorrect", f"Facing looks right-heavy for {direction}", "error")
+    if direction in ("E", "NE", "SE") and bias < -0.22:
+        return _warn("direction_likely_incorrect", f"Facing looks left-heavy for {direction}", severity)
+    if direction in ("W", "NW", "SW") and bias > 0.22:
+        return _warn("direction_likely_incorrect", f"Facing looks right-heavy for {direction}", severity)
     if direction in ("N", "S") and abs(bias) > 0.38:
-        return _warn("direction_likely_incorrect", "Front/back facing looks strongly side-biased")
+        return _warn("direction_likely_incorrect", "Front/back facing looks strongly side-biased", severity)
     return None
 
 
@@ -268,9 +333,16 @@ def _add_composition_failures(
         warnings.append(_warn("missing_spirit_tail", "Missing spirit tail", severity))
         warnings.append(_warn("lower_spirit_body_missing", "Lower spirit body missing", severity))
 
-    blobs = data.get("significant_blobs") or metrics.get("significant_blobs") or 0
-    if one_character and blobs >= 3:
-        warnings.append(_warn("extra_characters", "More than one character-sized blob"))
+    major = data.get("major_blobs") or metrics.get("major_blobs") or 0
+    stray = data.get("stray_blobs") or metrics.get("stray_blobs") or 0
+    second_ratio = data.get("second_ratio") or metrics.get("second_ratio") or 0
+    significant = data.get("significant_blobs") or metrics.get("significant_blobs") or 0
+    if one_character and (major >= 2 or second_ratio >= 0.28):
+        warnings.append(_warn("possible_duplicate_figure", "Possible duplicate figure / artifact", "error"))
+    if one_character and stray >= 1:
+        warnings.append(_warn("extra_artifact", "Possible duplicate figure / artifact", "error" if for_base else "warning"))
+    if one_character and significant >= 3:
+        warnings.append(_warn("extra_characters", "Possible duplicate figure / artifact", "error"))
 
 
 def validate_sprite(
@@ -318,7 +390,9 @@ def validate_sprite(
         warnings.append(_warn("inconsistent_canvas", "Canvas is not square"))
 
     mismatch = _palette_mismatch(metrics["unique"], palette)
-    if palette and mismatch > 28:
+    if palette and mismatch > 55:
+        warnings.append(_warn("palette_mismatch", f"Large palette inconsistency (mean distance {mismatch:.0f})", "error"))
+    elif palette and mismatch > 28:
         warnings.append(_warn("palette_mismatch", f"Colors drift from the accepted character palette (mean distance {mismatch:.0f})"))
 
     ref_metrics = _metrics(reference) if reference is not None else None
@@ -352,27 +426,52 @@ def validate_sprite(
     portrait_failed = any(w.code in PORTRAIT_CODES for w in warnings)
     crop_failed = any(w.code in CROP_CODES for w in warnings)
     full_body_failed = any(w.code in FULL_BODY_CODES for w in warnings)
-    valid_for_base = not any(w.code in INVALID_BASE_MESSAGES for w in warnings)
+    artifact_detected = any(w.code in ARTIFACT_CODES for w in warnings)
+    silhouette_warning = any(w.code in SILHOUETTE_CODES for w in warnings)
+    spirit_warning = any(w.code in SPIRIT_CODES for w in warnings)
+    facing_failed = any(w.code == "direction_likely_incorrect" for w in warnings)
+    valid_for_base = not any(w.code in INVALID_BASE_MESSAGES for w in warnings) and not artifact_detected
     if for_base and metrics["opaque"] == 0:
         valid_for_base = False
+    has_error = any(w.severity == "error" for w in warnings)
+    valid_for_direction = (
+        metrics["opaque"] > 0
+        and not artifact_detected
+        and not portrait_failed
+        and not crop_failed
+        and not has_error
+    )
 
     score = 100
     composition_score = 100
+    direction_score = 100
     for warning in warnings:
         penalty = 18 if warning.severity == "error" else 8
         score -= penalty
-        if warning.code in INVALID_BASE_MESSAGES:
+        if warning.code in INVALID_BASE_MESSAGES or warning.code in ARTIFACT_CODES:
             composition_score -= 22 if warning.severity == "error" else 14
+        if warning.code == "direction_likely_incorrect":
+            direction_score -= 36 if warning.severity == "error" else 18
+        if warning.code in ARTIFACT_CODES:
+            direction_score -= 20
     score = max(0, min(100, score))
     composition_score = max(0, min(100, composition_score))
+    direction_score = max(0, min(100, direction_score if not facing_failed else min(direction_score, 55)))
     bbox = metrics["bbox"]
     edge_source = source_metrics or metrics
 
     return QualityValidation(
-        ok=not any(w.severity == "error" for w in warnings) and (valid_for_base if for_base else True),
+        ok=(not has_error and valid_for_base) if for_base else valid_for_direction,
         score=score,
         compositionScore=composition_score,
+        directionScore=direction_score,
         validForBase=valid_for_base,
+        validForDirection=valid_for_direction,
+        artifactWarning=artifact_detected,
+        artifactDetected=artifact_detected,
+        silhouetteWarning=silhouette_warning,
+        spiritFormWarning=spirit_warning,
+        compositionFailed=portrait_failed or crop_failed or full_body_failed,
         warnings=warnings,
         futureChecks=[],
         occupancy=round(occupancy, 4),

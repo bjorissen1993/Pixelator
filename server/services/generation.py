@@ -16,7 +16,7 @@ from persistence.store import asset_path, character_dir
 from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
 from processing.preview import make_preview, preview_relative
-from processing.validation import invalid_base_reasons, is_valid_base, validate_sprite
+from processing.validation import invalid_base_reasons, is_valid_base, is_valid_direction, validate_sprite
 from prompts.builder import build_prompt, build_pixellab_description
 from prompts.composition import FRAMING_RETRY, composition_constraints
 from providers.base import DirectionSpec, GeneratedImage
@@ -130,10 +130,23 @@ def locked_palette(character: CharacterProfile) -> list[tuple[int, int, int]] | 
     return colors or None
 
 
-def identity_sprite(character: CharacterProfile) -> Image.Image | None:
+def usable_accepted_base(character: CharacterProfile):
     if character.acceptedBase is None:
         return None
-    return load_image(character.acceptedBase.sprite.path)
+    validation = character.acceptedBase.sprite.validation
+    if validation is None:
+        validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
+        character.acceptedBase.sprite.validation = validation
+    if not is_valid_base(validation):
+        return None
+    return character.acceptedBase
+
+
+def identity_sprite(character: CharacterProfile) -> Image.Image | None:
+    base = usable_accepted_base(character)
+    if base is None:
+        return None
+    return load_image(base.sprite.path)
 
 
 def process_generated(character: CharacterProfile, image: Image.Image, direction=None, for_base: bool = False):
@@ -161,29 +174,6 @@ def process_generated(character: CharacterProfile, image: Image.Image, direction
         spirit_form=character.spirit.enabled or character.spirit.noLegs,
         for_base=for_base,
         one_character=comp.oneCharacterOnly,
-    )
-    provider = get_provider()
-    native = provider.capabilities.nativePixelOutput
-    skip_palette = native and provider.info.id == "pixellab"
-    working = character.spriteSize if native else max(character.spriteSize, config.WORKING_SIZE)
-    comp = character.composition
-    margin = 0.10 if comp.fitSafeMargins or comp.preventCropping else 0.04
-    return pipeline.process(
-        image,
-        character.spriteSize,
-        character.palette.colorCount,
-        character.outline,
-        False if native else config.ENABLE_BG_REMOVAL,
-        None if skip_palette else palette_colors(character),
-        on_step=lambda step: progress.set_step(character.id, step),
-        native=native,
-        working_size=working,
-        palette_mode=palette_mode_name(character),
-        reference=identity_sprite(character),
-        direction=direction,
-        fit_margin=margin,
-        center=comp.centerCharacter,
-        spirit_form=character.spirit.enabled or character.spirit.noLegs,
     )
 
 
@@ -280,6 +270,11 @@ def make_asset(
     debug.referenceAssetId = reference_asset_id or debug.referenceAssetId
     debug.strength = strength if strength is not None else debug.strength
     debug.usedReference = debug.usedReference or bool(reference_asset_id or reference_direction)
+    debug.targetDirection = debug.targetDirection or from_direction
+    if validation is not None:
+        debug.artifactDetected = bool(getattr(validation, "artifactDetected", False))
+        debug.compositionFailed = bool(getattr(validation, "compositionFailed", False))
+        debug.directionScore = getattr(validation, "directionScore", None)
     return SpriteAsset(
         id=new_id(),
         kind=kind,  # type: ignore[arg-type]
@@ -437,7 +432,7 @@ def generate_image(
         if for_base:
             if is_valid_base(validation):
                 break
-        elif not looks_cropped(validation):
+        elif is_valid_direction(validation):
             break
     if last is None:
         raise RuntimeError("Generation produced no image")
@@ -815,6 +810,10 @@ def generate_direction(
                 debug.referenceDirection = from_dir
                 debug.referenceAssetId = ref_asset_id
                 debug.strength = strength
+                debug.targetDirection = direction
+                debug.artifactDetected = bool(getattr(validation, "artifactDetected", False))
+                debug.compositionFailed = bool(getattr(validation, "compositionFailed", False))
+                debug.directionScore = getattr(validation, "directionScore", None)
             asset = make_asset(
                 character,
                 sprite,
@@ -837,13 +836,25 @@ def generate_direction(
 
         if layer == "full":
             slot.candidates = candidates
-            preview_asset = max(candidates, key=lambda item: item.validation.score if item.validation else 0)
+            usable = [item for item in candidates if is_valid_direction(item.validation)]
+            preview_asset = max(
+                usable or candidates,
+                key=lambda item: (
+                    (item.validation.score if item.validation else 0),
+                    (item.validation.directionScore if item.validation else 0),
+                ),
+            )
             accepted = slot.status in ("accepted", "locked") or slot.locked
             if not accepted:
                 while len(slot.frames) <= frame_index:
                     slot.frames.append(preview_asset)
                 slot.frames[frame_index] = preview_asset
-                slot.status = "pending"
+                if usable:
+                    slot.status = "pending"
+                    preview_asset.status = "pending"
+                else:
+                    slot.status = "rejected"
+                    preview_asset.status = "rejected"
                 slot.seed = preview_asset.seed
                 if state.headSeparated:
                     sprite_image = load_image(preview_asset.path)
@@ -1149,13 +1160,7 @@ def require_direction_set(character_id: str, state_id: str | None = None) -> tup
     if character.acceptedBase is not None:
         accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
         character.acceptedBase.sprite.validation = accepted_validation
-        reasons = invalid_base_reasons(accepted_validation)
-        if reasons:
-            character_service.save_character(character)
-            raise ValueError(
-                "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
-                + " ".join(reasons)
-            )
+        character_service.save_character(character)
     resolved = state_id or (character.states[0].id if character.states else "")
     if not resolved:
         raise ValueError("Create a state before generating directions")
@@ -1192,7 +1197,8 @@ def generate_direction_set(
     total = len([d for d in wanted if not skippable(character_service.find_slot(state, d))])
     done = 0
     generated_south = False
-    if character.acceptedBase is None and "S" in wanted:
+    base_usable = usable_accepted_base(character) is not None
+    if not base_usable and "S" in wanted:
         south = character_service.find_slot(state, "S")
         if not skippable(south):
             log_generation("generate_all_directions_south_first", character, state=state_id, direction="S")
@@ -1204,6 +1210,19 @@ def generate_direction_set(
             character = character_service.get_character(character_id)
             state = character_service.find_state(character, state_id)
             character_service.ensure_slots(state, character.spriteSize)
+            south = character_service.find_slot(state, "S")
+            south_validation = character.pendingBase.validation if character.pendingBase else (
+                south.frames[0].validation if south.frames else None
+            )
+            if not is_valid_base(south_validation) and not is_valid_direction(south_validation):
+                if south.frames:
+                    south.status = "rejected"
+                    south.frames[0].status = "rejected"
+                    character_service.save_character(character)
+                raise ValueError(
+                    "South failed validation and was not used as a reference for the other directions. "
+                    "Review or regenerate South, then Accept as Base."
+                )
     if native_images:
         for direction in wanted:
             if direction == "S" and generated_south:
