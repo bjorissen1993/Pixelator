@@ -1,0 +1,13 @@
+---
+description: Always commit completed work and push it to GitHub
+alwaysApply: true
+---
+
+# Always push to GitHub
+
+After finishing work in this repo, commit the relevant source changes and immediately push to `origin` on the current branch.
+
+- Do this without waiting to be asked again.
+- Never commit or push `node_modules/`, `.venv/`, `.env`, secrets, or generated model/output files.
+- Use `git push -u origin HEAD` when the branch has no upstream yet.
+- Do not force-push to `main` or `master`.

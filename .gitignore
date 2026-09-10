@@ -1,0 +1,17 @@
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+dist/
+build/
+.DS_Store
+.idea/
+.vscode/
+*.egg-info/
+.huggingface/
+huggingface/
+outputs/
+*.png
+!client/public/**
