@@ -1,11 +1,56 @@
-import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob } from "@shared";
+import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
 
-function formatDetail(detail: unknown): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail.map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : JSON.stringify(item))).join("; ");
+export class ApiRequestError extends Error {
+  details: string;
+  traceId: string;
+  context: Record<string, string>;
+
+  constructor(payload: ApiErrorPayload) {
+    super(payload.message || "Request failed");
+    this.name = "ApiRequestError";
+    this.details = payload.details || "";
+    this.traceId = payload.traceId || "";
+    this.context = payload.context || {};
   }
-  return "Request failed";
+}
+
+function asPayload(data: unknown, fallback: string): ApiErrorPayload {
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    if (record.error && typeof record.message === "string") {
+      return {
+        error: true,
+        message: record.message,
+        details: typeof record.details === "string" ? record.details : JSON.stringify(record.details ?? ""),
+        traceId: typeof record.traceId === "string" ? record.traceId : "",
+        context: (record.context as Record<string, string>) || {},
+      };
+    }
+    const detail = record.detail;
+    if (typeof detail === "string") {
+      return { error: true, message: detail, details: detail };
+    }
+    if (detail && typeof detail === "object") {
+      const nested = detail as Record<string, unknown>;
+      if (typeof nested.message === "string") {
+        return {
+          error: true,
+          message: nested.message,
+          details: typeof nested.details === "string" ? nested.details : JSON.stringify(nested),
+          traceId: typeof nested.traceId === "string" ? nested.traceId : "",
+          context: (nested.context as Record<string, string>) || {},
+        };
+      }
+      if (Array.isArray(detail)) {
+        return {
+          error: true,
+          message: detail.map((item) => (item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : JSON.stringify(item))).join("; "),
+          details: JSON.stringify(detail),
+        };
+      }
+    }
+  }
+  return { error: true, message: fallback, details: fallback };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -16,7 +61,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(formatDetail((data as { detail?: unknown }).detail) || response.statusText);
+    throw new ApiRequestError(asPayload(data, response.statusText || "Request failed"));
   }
   if (response.status === 204) return undefined as T;
   const contentType = response.headers.get("content-type") || "";
@@ -32,7 +77,7 @@ export async function downloadPost(path: string, filename: string, body?: unknow
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(formatDetail((data as { detail?: unknown }).detail) || "Download failed");
+    throw new ApiRequestError(asPayload(data, "Download failed"));
   }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
@@ -122,6 +167,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ stateId, direction }),
     }),
+  removeDirection: (id: string, stateId: string, direction: Direction) =>
+    request<CharacterProfile>(`/api/characters/${id}/states/${stateId}/directions/${direction}`, { method: "DELETE" }),
   generateAnimation: (id: string, body: Record<string, unknown>) =>
     request<{ job: GenerationJob; character: CharacterProfile }>(`/api/characters/${id}/generate/animation`, {
       method: "POST",
@@ -129,7 +176,7 @@ export const api = {
     }),
   refine: (id: string, body: Record<string, unknown>) =>
     request<GenerationResult>(`/api/characters/${id}/refine`, { method: "POST", body: JSON.stringify(body) }),
-  getJob: (jobId: string) => request<{ job: GenerationJob; result: GenerationResult | null }>(`/api/jobs/${jobId}`),
+  getJob: (id: string) => request<{ job: GenerationJob; result: GenerationResult | null }>(`/api/jobs/${id}`),
   characterJobs: (id: string) => request<{ active: GenerationJob | null; jobs: GenerationJob[] }>(`/api/characters/${id}/jobs`),
   styles: () => request<StyleProfile[]>("/api/styles"),
   createStyle: (name: string) => request<StyleProfile>("/api/styles", { method: "POST", body: JSON.stringify({ name }) }),

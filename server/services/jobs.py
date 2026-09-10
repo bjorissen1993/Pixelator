@@ -1,8 +1,12 @@
+import logging
 import threading
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from models.generation import GenerationJob
+from services.errors import error_payload
+
+logger = logging.getLogger("pixelator.jobs")
 
 _lock = threading.Lock()
 _jobs: dict[str, GenerationJob] = {}
@@ -40,7 +44,7 @@ def update(job_id: str, **fields) -> GenerationJob | None:
         data.update(fields)
         data["updatedAt"] = utc_now()
         job = GenerationJob(**data)
-        _jobs[job_id] = job
+        _jobs[job.id] = job
         return job
 
 
@@ -54,8 +58,9 @@ def complete(job_id: str, result: dict, used_reference: bool = False) -> None:
     update(job_id, status="completed", usedReference=used_reference, currentItem="done")
 
 
-def fail(job_id: str, error: str) -> None:
-    update(job_id, status="failed", error=error)
+def fail(job_id: str, error: str, details: str = "", trace_id: str = "") -> None:
+    logger.error("job failed id=%s error=%s\n%s", job_id, error, details)
+    update(job_id, status="failed", error=error, errorDetails=details, traceId=trace_id)
 
 
 def get(job_id: str) -> GenerationJob | None:
@@ -90,7 +95,11 @@ def run_in_background(job: GenerationJob, fn) -> GenerationJob:
             payload = fn(job)
             complete(job.id, payload, bool(payload.get("usedReference")))
         except Exception as exc:
-            fail(job.id, str(exc))
+            payload = error_payload(
+                exc,
+                context={"jobId": job.id, "characterId": job.characterId, "operation": job.operation},
+            )
+            fail(job.id, payload["message"], payload["details"], payload["traceId"])
 
     threading.Thread(target=worker, daemon=True).start()
     return job

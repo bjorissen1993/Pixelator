@@ -102,6 +102,7 @@ textarea { resize: vertical; }
 .btn.secondary { background: #263128; color: #e8efe3; }
 .btn.ghost { background: transparent; color: #c8ea83; border: 1px solid #31432e; }
 .btn.danger { background: #3a1f1f; color: #ffb4b4; }
+.btn.remove { background: transparent; color: #d7c48a; border: 1px dashed #6a5a32; }
 .btn:disabled { opacity: 0.5; cursor: wait; }
 
 .chip-row, .action-grid { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -202,6 +203,8 @@ button.compass-cell { width: 100%; font: inherit; }
 }
 .banner.busy { background: #1c2718; color: #c8ea83; }
 .banner.error { background: #3a1f1f; color: #ffb4b4; }
+.banner.error .error-details { margin-top: 8px; color: #e8c4c4; }
+.banner.error .error-details pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; font-size: 11px; color: #d7b0b0; }
 .generation-status { display: flex; gap: 14px; align-items: start; }
 .generation-status p { margin: 4px 0 0; color: #d7e4c8; }
 .pipeline-steps {
@@ -324,6 +327,8 @@ button.compass-cell { width: 100%; font: inherit; }
 .compass-cell.status-pending { border-color: #7d8f4a; }
 .compass-cell.status-rejected { border-color: #8a4a4a; }
 .compass-cell.status-locked { border-color: #c8ff68; box-shadow: inset 0 0 0 1px #c8ff68; }
+.compass-cell.status-missing { opacity: 0.85; }
+.compass-remove { font-size: 11px; padding: 3px 8px; }
 .job-line { color: #c8ea83; font-weight: 700; margin: 0; }
 .frame-strip { display: flex; gap: 8px; overflow: auto; padding-top: 8px; }
 .candidate-btn {

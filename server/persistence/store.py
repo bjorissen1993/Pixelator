@@ -4,6 +4,7 @@ from pathlib import Path
 import config
 from domain.berwynn import berwynn_profile
 from models.character import CharacterProfile
+from persistence.paths import asset_file, sanitize_slug
 
 _lock = threading.Lock()
 
@@ -11,11 +12,12 @@ _lock = threading.Lock()
 def ensure_dirs() -> Path:
     data = config.DATA_DIR
     (data / "characters").mkdir(parents=True, exist_ok=True)
+    (data / "logs").mkdir(parents=True, exist_ok=True)
     return data
 
 
 def character_dir(slug: str) -> Path:
-    path = ensure_dirs() / "characters" / slug
+    path = ensure_dirs() / "characters" / sanitize_slug(slug)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -25,9 +27,7 @@ def character_json_path(slug: str) -> Path:
 
 
 def asset_path(slug: str, relative: str) -> Path:
-    path = character_dir(slug) / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    return asset_file(slug, relative)
 
 
 class JsonStore:

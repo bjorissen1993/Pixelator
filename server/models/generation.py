@@ -135,6 +135,8 @@ class GenerationJob(BaseModel):
     total: int | None = None
     currentItem: str = ""
     error: str = ""
+    errorDetails: str = ""
+    traceId: str = ""
     usedReference: bool = False
     createdAt: str = ""
     updatedAt: str = ""

@@ -1,11 +1,11 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
-import type { GenerationProgress, SpriteAsset } from "@shared";
+import type { ApiErrorPayload, GenerationProgress, SpriteAsset } from "@shared";
 import { previewSrc } from "../asset";
 
 export function Button({
   variant = "primary",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" | "remove" }) {
   return <button className={`btn ${variant}`} {...props} />;
 }
 
@@ -118,10 +118,31 @@ export function GenerationStatus({
   busy?: string;
   generating?: boolean;
   progress?: GenerationProgress | null;
-  error?: string;
+  error?: ApiErrorPayload | string | null;
 }) {
   if (!error && !busy && !generating) return null;
-  if (error) return <div className="banner error">{error}</div>;
+  if (error) {
+    const payload = typeof error === "string" ? { message: error } : error;
+    return (
+      <div className="banner error" role="alert">
+        <strong>{payload.message}</strong>
+        {payload.traceId ? <p className="hint">Trace {payload.traceId}</p> : null}
+        {payload.context && Object.keys(payload.context).length ? (
+          <p className="hint">
+            {Object.entries(payload.context)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(" · ")}
+          </p>
+        ) : null}
+        {payload.details ? (
+          <details className="error-details">
+            <summary>Technical details</summary>
+            <pre>{payload.details}</pre>
+          </details>
+        ) : null}
+      </div>
+    );
+  }
   const current = progress?.step || busy || "Working…";
   return (
     <div className="banner busy generation-status" aria-live="polite">

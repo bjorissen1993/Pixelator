@@ -1,19 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from models.common import CreateCharacterRequest, CreateStateRequest, ProviderInfo, UpdateStateRequest
 from models.patch import CharacterPatch
 from providers.registry import get_provider
 from services import characters as character_service
+from services.errors import http_error
 
 router = APIRouter()
 
 
 def _http(exc: Exception, not_found: bool = False):
-    if isinstance(exc, KeyError) or not_found:
-        raise HTTPException(status_code=404, detail=str(exc) or "Not found") from exc
-    if isinstance(exc, ValueError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    raise HTTPException(status_code=500, detail=str(exc)) from exc
+    http_error(exc, status=404 if not_found or isinstance(exc, KeyError) else None, context={"action": "characters"})
 
 
 @router.get("/api/providers", response_model=ProviderInfo)

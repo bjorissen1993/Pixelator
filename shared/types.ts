@@ -332,6 +332,14 @@ export interface ProviderInfo {
   workingSize?: number;
 }
 
+export interface ApiErrorPayload {
+  error?: boolean;
+  message: string;
+  details?: string;
+  traceId?: string;
+  context?: Record<string, string>;
+}
+
 export interface GenerationJob {
   id: string;
   characterId: string;
@@ -342,6 +350,8 @@ export interface GenerationJob {
   total: number | null;
   currentItem: string;
   error: string;
+  errorDetails?: string;
+  traceId?: string;
   usedReference: boolean;
   createdAt: string;
   updatedAt: string;

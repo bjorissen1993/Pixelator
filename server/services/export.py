@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 import config
 from domain.directions import ordered_for_export
 from models.character import CharacterProfile
+from persistence.paths import resolve_data_path
 from persistence.store import asset_path
 from services import characters as character_service
 
@@ -15,10 +16,13 @@ from services import characters as character_service
 def _open(relative: str | None, size: int) -> Image.Image:
     if not relative:
         return Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    path = config.DATA_DIR / relative
-    if not path.exists():
+    path = resolve_data_path(relative)
+    if path is None or not path.exists() or not path.is_file():
         return Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    return Image.open(path).convert("RGBA")
+    try:
+        return Image.open(path).convert("RGBA")
+    except OSError:
+        return Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
 
 def _sheet(rows: list[list[Image.Image]], size: int) -> Image.Image:
@@ -90,19 +94,26 @@ def build_metadata(character: CharacterProfile) -> dict:
     }
 
 
+def _existing_file(relative: str | None) -> Path:
+    path = resolve_data_path(relative) if relative else None
+    if path is None or not path.is_file():
+        raise ValueError("Asset file is missing or the path is invalid")
+    return path
+
+
 def export_png(character_id: str, state_id: str | None, direction: str | None) -> Path:
     character = character_service.get_character(character_id)
     if character.acceptedBase and not state_id:
-        return config.DATA_DIR / character.acceptedBase.sprite.path
+        return _existing_file(character.acceptedBase.sprite.path)
     if not state_id or not direction:
         if character.pendingBase:
-            return config.DATA_DIR / character.pendingBase.path
+            return _existing_file(character.pendingBase.path)
         raise ValueError("Choose a state and direction, or accept a base sprite first")
     state = character_service.find_state(character, state_id)
     slot = character_service.find_slot(state, direction)
     if not slot.frames:
         raise ValueError("That direction has no generated frames yet")
-    return config.DATA_DIR / slot.frames[0].path
+    return _existing_file(slot.frames[0].path)
 
 
 def export_state_sheet(character_id: str, state_id: str) -> Path:
@@ -177,8 +188,8 @@ def export_training_dataset(character_id: str) -> Path:
             return
         if not (asset.accepted or getattr(asset, "status", "") in ("accepted", "locked")):
             return
-        source = config.DATA_DIR / asset.path
-        if not source.exists():
+        source = resolve_data_path(asset.path)
+        if source is None or not source.is_file():
             return
         name = f"{index:04d}.png"
         target = folder / name

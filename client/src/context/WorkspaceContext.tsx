@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DIRECTIONS_8 } from "@shared";
 import type {
+  ApiErrorPayload,
   CharacterProfile,
   Direction,
   GenerationProgress,
@@ -10,7 +11,7 @@ import type {
   StateTemplate,
   WorkspaceSection,
 } from "@shared";
-import { api } from "../api";
+import { api, ApiRequestError } from "../api";
 
 export const SECTIONS: WorkspaceSection[] = [
   { id: "studio", label: "Studio" },
@@ -34,7 +35,7 @@ type WorkspaceValue = {
   busy: string;
   generating: boolean;
   progress: GenerationProgress | null;
-  error: string;
+  error: ApiErrorPayload | null;
   prompt: PromptLayers | null;
   usedReference: boolean;
   setSection: (id: WorkspaceSection["id"]) => void;
@@ -64,7 +65,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState("");
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ApiErrorPayload | null>(null);
   const [prompt, setPrompt] = useState<PromptLayers | null>(null);
   const [usedReference, setUsedReference] = useState(false);
   const characterIdRef = useRef<string | null>(null);
@@ -105,14 +106,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh().catch((err: Error) => setError(err.message));
+    refresh().catch((err: unknown) => {
+      if (err instanceof ApiRequestError) setError(err);
+      else setError({ message: err instanceof Error ? err.message : String(err) });
+    });
   }, [refresh]);
 
   const run = useCallback(async <T,>(label: string, fn: () => Promise<T>, options?: RunOptions) => {
     const track = options?.generating ?? GENERATING_PATTERN.test(label);
     setBusy(label);
     setGenerating(track);
-    setError("");
+    setError(null);
     if (track) {
       setProgress({
         active: true,
@@ -160,16 +164,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }));
             if (job.status === "completed") {
               if (data.result) applyResult(data.result);
+              setError(null);
               return (data.result as T) ?? result;
             }
-            if (job.status === "failed") throw new Error(job.error || "Generation failed");
+            if (job.status === "failed") {
+              throw new ApiRequestError({
+                message: job.error || "Generation failed",
+                details: job.errorDetails || job.error,
+                traceId: job.traceId,
+              });
+            }
             await new Promise((resolve) => setTimeout(resolve, 400));
           }
         }
       }
+      setError(null);
       return result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiRequestError) setError(err);
+      else setError({ message: err instanceof Error ? err.message : String(err), details: err instanceof Error ? err.stack : String(err) });
       return undefined;
     } finally {
       if (timer) window.clearInterval(timer);

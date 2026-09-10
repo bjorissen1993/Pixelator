@@ -1,4 +1,3 @@
-import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -7,6 +6,7 @@ from domain.directions import DIRECTIONS_8, directions_for_mode
 from models.character import CharacterProfile, CharacterState, DirectionSlot, HeadAnchor
 from models.common import CreateCharacterRequest, CreateStateRequest, UpdateStateRequest
 from models.patch import CharacterPatch
+from persistence.paths import sanitize_slug
 from persistence.store import store
 from processing.preview import ensure_character_previews
 
@@ -20,8 +20,7 @@ def new_id() -> str:
 
 
 def slugify(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "character"
+    return sanitize_slug(name)
 
 
 def unique_slug(name: str) -> str:
@@ -55,9 +54,15 @@ def _refresh_stale_base_validation(character: CharacterProfile) -> bool:
 
 
 def _with_previews(character: CharacterProfile) -> CharacterProfile:
-    changed = ensure_character_previews(character)
-    if _refresh_stale_base_validation(character):
-        changed = True
+    changed = False
+    try:
+        changed = ensure_character_previews(character)
+        if _refresh_stale_base_validation(character):
+            changed = True
+    except OSError:
+        import logging
+
+        logging.getLogger("pixelator").exception("Preview/validation refresh failed for %s", character.id)
     if changed:
         return store.save(character)
     return character

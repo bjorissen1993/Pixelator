@@ -1,3 +1,5 @@
+import logging
+import shutil
 from datetime import datetime, timezone
 from random import randint
 from uuid import uuid4
@@ -9,9 +11,11 @@ from domain.directions import EXPORT_DIRECTION_ORDER, HEAD_VARIANTS, closest_ref
 from models.character import AcceptedBase, CharacterProfile, GenerationDebug, HeadAnchor, SpriteAsset
 from models.enums import Direction, HeadVariant, LayerKind
 from models.generation import PromptLayers
-from persistence.store import asset_path
+from persistence.paths import public_asset_path, resolve_data_path
+from persistence.store import asset_path, character_dir
 from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
+from processing.preview import make_preview, preview_relative
 from processing.validation import invalid_base_reasons, is_valid_base, validate_sprite
 from prompts.builder import build_prompt, build_pixellab_description
 from prompts.composition import FRAMING_RETRY, composition_constraints
@@ -23,6 +27,27 @@ from services import memory
 from services import progress
 
 pipeline = PixelPipeline()
+logger = logging.getLogger("pixelator.generation")
+
+
+def log_generation(action: str, character: CharacterProfile | None = None, **context) -> None:
+    provider = get_provider()
+    parts = [
+        f"action={action}",
+        f"characterId={getattr(character, 'id', context.get('characterId', ''))}",
+        f"slug={getattr(character, 'slug', '')}",
+        f"provider={provider.info.id}",
+        f"model={provider.info.modelId}",
+        f"lora={provider.info.loraPath if provider.info.loraLoaded else 'none'}",
+    ]
+    for key, value in context.items():
+        if value is None or key == "characterId":
+            continue
+        text = str(value)
+        if key in {"prompt", "negative"} and len(text) > 800:
+            text = text[:800] + "…"
+        parts.append(f"{key}={text}")
+    logger.info(" | ".join(parts))
 
 
 def utc_now() -> str:
@@ -34,22 +59,31 @@ def new_id() -> str:
 
 
 def public_path(slug: str, relative: str) -> str:
-    return f"characters/{slug}/{relative}".replace("\\", "/")
+    return public_asset_path(slug, relative)
 
 
 def save_image(slug: str, relative: str, image: Image.Image) -> str:
     path = asset_path(slug, relative)
-    image.save(path, format="PNG")
+    logger.info("Saving image slug=%s relative=%s path=%s", slug, relative, path)
+    try:
+        image.save(path, format="PNG")
+    except OSError:
+        logger.exception("Failed to save image path=%s", path)
+        raise
     return public_path(slug, relative)
 
 
 def load_image(relative: str | None) -> Image.Image | None:
-    if not relative:
+    path = resolve_data_path(relative)
+    if path is None or not path.exists() or not path.is_file():
+        if relative:
+            logger.warning("Image missing or invalid relative=%s resolved=%s", relative, path)
         return None
-    path = config.DATA_DIR / relative
-    if not path.exists():
-        return None
-    return Image.open(path).convert("RGBA")
+    try:
+        return Image.open(path).convert("RGBA")
+    except OSError:
+        logger.exception("Failed to open image path=%s relative=%s", path, relative)
+        raise
 
 
 def resolve_seed(character: CharacterProfile, requested: int | None = None, mode: str = "reuse_base") -> int | None:
@@ -367,6 +401,18 @@ def generate_image(
             working_seed = None if seed is None else seed + 17 * attempt
         progress.set_step(character.id, "generating source image")
         model_prompt = provider_prompt(character, working_prompt)
+        log_generation(
+            "generate_image",
+            character,
+            direction=direction,
+            state=state_id or ("idle" if for_base else ""),
+            seed=working_seed,
+            attempt=attempt + 1,
+            useReference=use_reference,
+            forBase=for_base,
+            prompt=model_prompt.final,
+            negative=model_prompt.negative,
+        )
         ref = init_image or (reference_image(character, direction, state_id) if use_reference else None)
         used_reference = False
         if ref is not None and (
@@ -406,11 +452,20 @@ def _track(character_id: str, label: str):
 
 
 def generate_base(character_id: str, seed: int | None = None, override: str = "") -> dict:
-    nested = _track(character_id, "Generating base")
+    nested = _track(character_id, "Generating south")
     try:
         character = character_service.get_character(character_id)
-        prompt = build_prompt(character, override=override)
+        idle = _idle_state(character)
+        prompt = build_prompt(character, state=idle, direction="S", override=override)
         provider = get_provider()
+        logger.info(
+            "generate_base character=%s slug=%s provider=%s model=%s seed=%s",
+            character.id,
+            character.slug,
+            provider.info.id,
+            provider.info.modelId,
+            seed,
+        )
         chosen_seed = resolve_seed(character, seed, "reuse_base")
         pack = None
         if hasattr(provider, "create_character_pack"):
@@ -428,15 +483,17 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
             generated = GeneratedImage(pack["south"], pack.get("seed", chosen_seed), prompt)
             generated.external_id = pack.get("external_id")
             generated.direction_images = pack.get("directions")
-            sprite, preview, validation = process_generated(character, generated.image, for_base=True)
+            sprite, preview, validation = process_generated(character, generated.image, direction="S", for_base=True)
             used_reference = False
             if pack.get("external_id"):
                 character.externalProviderId = provider.info.id
                 character.externalCharacterId = pack["external_id"]
         else:
             generated, sprite, preview, validation, used_reference = generate_image(
-                character, prompt, use_reference=False, seed=chosen_seed, for_base=True
+                character, prompt, use_reference=False, seed=chosen_seed, for_base=True, direction="S"
             )
+        if generated.debug:
+            generated.debug.referenceDirection = "S"
         anchor = estimate_head_anchor(sprite, character.spriteSize)
         asset = make_asset(
             character,
@@ -451,13 +508,58 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
             source=generated.image,
             negative=prompt.negative,
             debug=generated.debug,
+            from_direction="S",
+            reference_direction="S",
         )
         character.pendingBase = asset
+        _sync_south_slot(character, asset)
         character_service.save_character(character)
+        log_generation(
+            "generate_base",
+            character,
+            direction="S",
+            state=idle.id if idle else "idle",
+            seed=generated.seed,
+            path=asset.path,
+            previewPath=asset.previewPath,
+            sourcePath=asset.sourcePath,
+            prompt=prompt.final,
+            negative=prompt.negative,
+        )
         return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    except Exception:
+        logger.exception("generate_base failed characterId=%s", character_id)
+        raise
     finally:
         if not nested:
             progress.finish(character_id)
+
+
+def _idle_state(character: CharacterProfile):
+    for state in character.states:
+        if state.baseType == "idle" or state.name.lower() == "idle":
+            return state
+    return character.states[0] if character.states else None
+
+
+def _sync_south_slot(character: CharacterProfile, asset: SpriteAsset) -> None:
+    state = _idle_state(character)
+    if state is None:
+        return
+    character_service.ensure_slots(state, character.spriteSize)
+    try:
+        slot = character_service.find_slot(state, "S")
+    except KeyError:
+        return
+    if slot.locked or slot.status in ("accepted", "locked"):
+        return
+    south = asset.model_copy(update={"fromDirection": "S", "referenceDirection": "S", "status": "pending", "accepted": False})
+    slot.frames = [south]
+    slot.candidates = [south]
+    slot.status = "pending"
+    slot.seed = south.seed
+    if asset.head:
+        slot.headAnchor = asset.head
 
 
 def _copy_pending_to_accepted(character: CharacterProfile, lock_palette: bool) -> CharacterProfile:
@@ -583,9 +685,20 @@ def generate_variation(character_id: str, seed: int | None = None, override: str
         )
         anchor = estimate_head_anchor(sprite, character.spriteSize)
         asset = make_asset(
-            character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, anchor, preview
+            character,
+            sprite,
+            "base/pending.png",
+            prompt.final,
+            generated.seed,
+            "full",
+            validation,
+            anchor,
+            preview,
+            from_direction="S",
+            reference_direction="S",
         )
         character.pendingBase = asset
+        _sync_south_slot(character, asset)
         character_service.save_character(character)
         return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
     finally:
@@ -638,6 +751,17 @@ def generate_direction(
             extra_clauses=hints["extra_clauses"],
         )
         chosen_seed = resolve_seed(character, seed if seed is not None else slot.seed, "reuse_base")
+        log_generation(
+            "generate_direction",
+            character,
+            direction=direction,
+            state=state.id,
+            slotStatus=slot.status,
+            seed=chosen_seed,
+            fromDirection=from_dir,
+            prompt=prompt.final,
+            negative=prompt.negative,
+        )
         native_images = native_direction_images(character, prompt, chosen_seed)
         if native_images.get(direction):
             asset = _save_direction_image(
@@ -1020,6 +1144,27 @@ def _save_direction_image(
     return asset
 
 
+def require_direction_set(character_id: str, state_id: str | None = None) -> tuple[CharacterProfile, str]:
+    character = character_service.get_character(character_id)
+    if character.acceptedBase is None:
+        raise ValueError(
+            "Accept a base character before generating all directions. Use Generate for the South facing, then Accept as Base."
+        )
+    accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
+    character.acceptedBase.sprite.validation = accepted_validation
+    reasons = invalid_base_reasons(accepted_validation)
+    if reasons:
+        character_service.save_character(character)
+        raise ValueError(
+            "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
+            + " ".join(reasons)
+        )
+    resolved = state_id or (character.states[0].id if character.states else "")
+    if not resolved:
+        raise ValueError("Create a state before generating directions")
+    return character, resolved
+
+
 def generate_direction_set(
     character_id: str,
     state_id: str | None = None,
@@ -1030,25 +1175,20 @@ def generate_direction_set(
     job_id: str | None = None,
     candidate_count: int | None = None,
 ) -> dict:
-    character = character_service.get_character(character_id)
-    if character.acceptedBase is None:
-        raise ValueError("Accept a base character before generating directions")
-    accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
-    character.acceptedBase.sprite.validation = accepted_validation
-    reasons = invalid_base_reasons(accepted_validation)
-    if reasons:
-        character_service.save_character(character)
-        raise ValueError(
-            "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
-            + " ".join(reasons)
-        )
-    state_id = state_id or (character.states[0].id if character.states else "")
-    if not state_id:
-        raise ValueError("Create a state before generating directions")
+    character, state_id = require_direction_set(character_id, state_id)
     state = character_service.find_state(character, state_id)
     character_service.ensure_slots(state, character.spriteSize)
     wanted = [direction for direction in EXPORT_DIRECTION_ORDER if direction in state.selectedDirections]
     prompt = build_prompt(character, state=state, override=override, from_direction="S")
+    log_generation(
+        "generate_all_directions",
+        character,
+        state=state_id,
+        prompt=prompt.final,
+        negative=prompt.negative,
+        acceptedBase=character.acceptedBase.sprite.path if character.acceptedBase else "",
+        directions=",".join(wanted),
+    )
     last = {"character": character, "prompt": prompt, "usedReference": False, "asset": None, "candidates": []}
     native_images = native_direction_images(character, prompt, seed)
     skippable = lambda slot: slot.locked or slot.status in ("accepted", "locked")
@@ -1094,6 +1234,28 @@ def generate_direction_set(
             candidate_count=candidate_count,
         )
     return last
+
+
+def remove_direction(character_id: str, state_id: str, direction: Direction) -> CharacterProfile:
+    character = character_service.get_character(character_id)
+    state = character_service.find_state(character, state_id)
+    slot = character_service.find_slot(state, direction)
+    if slot.locked or slot.status == "locked":
+        raise ValueError("Locked directions cannot be removed. Unlock first.")
+    log_generation("remove_direction", character, direction=direction, state=state_id, previousStatus=slot.status)
+    folder = character_dir(character.slug) / "states" / state.id / direction
+    if folder.exists() and folder.is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
+    slot.frames = []
+    slot.candidates = []
+    slot.body = None
+    slot.head = None
+    slot.overlays = []
+    slot.headVariants = {}
+    slot.status = "missing"
+    slot.locked = False
+    slot.seed = None
+    return character_service.save_character(character)
 
 
 def set_direction_status(

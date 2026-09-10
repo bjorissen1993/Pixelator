@@ -93,10 +93,17 @@ export function StudioScreen() {
 
   const generateEight = () => {
     if (!state) return;
-    run("Generate 8 Directions", async () => {
+    run("Generate All Directions", async () => {
       const started = await api.generateDirectionSet(character.id, { stateId: state.id, useReference: true });
       return started;
     });
+  };
+
+  const removeDirection = (direction: Direction) => {
+    if (!state) return;
+    if (!window.confirm("Remove this direction? This will clear the sprite and set the slot back to missing.")) return;
+    setSelectedDirection(direction);
+    run("Removing direction", () => api.removeDirection(character.id, state.id, direction).then(setCharacter), { generating: false });
   };
 
   return (
@@ -113,25 +120,26 @@ export function StudioScreen() {
             </p>
           </div>
           <div className="chip-row">
-            <Button disabled={locked} onClick={() => run("Generating base", async () => {
+            <Button disabled={locked} onClick={() => run("Generating south", async () => {
               const result = await api.generateBase(character.id, { seedMode: character.seedLocked ? "locked" : "random" });
               if (result) applyResult(result);
             })}>
-              Generate Base
+              Generate
             </Button>
             <Button
-              disabled={locked || !character.acceptedBase || !state || acceptedInvalid.length > 0}
+              disabled={locked || !state}
+              title={!character.acceptedBase ? "Accept a South base first" : acceptedInvalid.length ? "Accepted base failed full-body validation" : undefined}
               onClick={generateEight}
             >
-              Generate 8 Directions
+              Generate All Directions
             </Button>
           </div>
         </section>
 
         <div className="ref-row">
           <SpritePreviewCard
-            title="Pending Sprite"
-            empty="No pending sprite"
+            title={character.pendingBase?.fromDirection ? `Pending Sprite · ${character.pendingBase.fromDirection}` : "Pending Sprite"}
+            empty="No pending South sprite"
             asset={character.pendingBase}
             loading={generating && !progress?.currentItem}
             progress={progress}
@@ -206,13 +214,10 @@ export function StudioScreen() {
         <section className="block">
           <header className="block-head">
             <h2>{state ? `${state.name} directions` : "Directions"}</h2>
-            <Button disabled={locked || !character.acceptedBase || !state || acceptedInvalid.length > 0} onClick={generateEight}>
-              Generate 8 Directions
-            </Button>
           </header>
           <p className="hint">
-            Center is the accepted identity reference. Each facing is stored separately so you can accept, reject,
-            regenerate, or lock one direction without losing the others. Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
+            Center is the accepted identity reference. Generate creates South (S) as the pending base.
+            Generate All Directions fills the remaining facings. Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
           </p>
           <div className="compass studio-compass">
             {GRID.map((cell, index) => {
@@ -228,17 +233,24 @@ export function StudioScreen() {
               const status = slotStatus(slot);
               const selected = selectedDirection === cell;
               return (
-                <button
-                  key={cell}
-                  type="button"
-                  className={`compass-cell ${selected ? "active" : ""} status-${status}`}
-                  onClick={() => setSelectedDirection(cell)}
-                >
-                  <span>
-                    {cell} · {status}
-                  </span>
-                  <PixelImage asset={slot?.frames[0]} empty="missing" size={character.spriteSize} scale={3} />
-                </button>
+                <div key={cell} className={`compass-cell ${selected ? "active" : ""} status-${status}`}>
+                  <button type="button" className="compass-select" onClick={() => setSelectedDirection(cell)}>
+                    <span>
+                      {cell} · {status}
+                    </span>
+                    <PixelImage asset={slot?.frames[0]} empty="missing" size={character.spriteSize} scale={3} />
+                  </button>
+                  {status !== "missing" && status !== "locked" ? (
+                    <button
+                      type="button"
+                      className="btn remove compass-remove"
+                      disabled={locked}
+                      onClick={() => removeDirection(cell)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
               );
             })}
           </div>
@@ -394,6 +406,13 @@ export function StudioScreen() {
                   }
                 >
                   Use as reference
+                </Button>
+                <Button
+                  variant="remove"
+                  disabled={locked || selectedSlot.locked || slotStatus(selectedSlot) === "missing"}
+                  onClick={() => removeDirection(selectedDirection)}
+                >
+                  Remove
                 </Button>
               </div>
               <label className="field">
