@@ -92,8 +92,34 @@ export interface QualityWarning {
 
 export interface QualityValidation {
   ok: boolean;
+  score?: number;
   warnings: QualityWarning[];
   futureChecks: string[];
+  occupancy?: number;
+  heightRatio?: number;
+  widthRatio?: number;
+  centerX?: number;
+  centerY?: number;
+}
+
+export interface GenerationDebug {
+  provider: string;
+  model: string;
+  lora: string;
+  loraLoaded: boolean;
+  seed?: number | null;
+  steps?: number | null;
+  guidance?: number | null;
+  strength?: number | null;
+  referenceDirection?: Direction | null;
+  referenceAssetId?: string;
+  prompt: string;
+  negativePrompt: string;
+  workingResolution?: number | null;
+  targetResolution?: number | null;
+  paletteMode: string;
+  usedReference: boolean;
+  usedIpAdapter: boolean;
 }
 
 export interface SpriteAsset {
@@ -114,6 +140,10 @@ export interface SpriteAsset {
   head?: HeadAnchor | null;
   providerId?: string;
   fromDirection?: Direction | null;
+  referenceDirection?: Direction | null;
+  referenceAssetId?: string;
+  strength?: number | null;
+  debug?: GenerationDebug | null;
 }
 
 export interface GenerationProgress {
@@ -130,6 +160,7 @@ export interface GenerationProgress {
 export interface DirectionSlot {
   direction: Direction;
   frames: SpriteAsset[];
+  candidates?: SpriteAsset[];
   body?: SpriteAsset | null;
   head?: SpriteAsset | null;
   overlays: SpriteAsset[];
@@ -201,8 +232,10 @@ export interface CharacterProfile {
 
 export interface PromptLayers {
   globalStyle: string;
+  visualStyle?: string;
   masterPrompt: string;
   identity: string;
+  hardConstraints?: string;
   state: string;
   direction: string;
   expression: string;
@@ -226,8 +259,14 @@ export interface StateTemplate {
 
 export interface ProviderCapabilities {
   supportsTextToImage: boolean;
-  supportsReferenceImage: boolean;
+  supportsImg2Img?: boolean;
   supportsImageToImage: boolean;
+  supportsReferenceImage: boolean;
+  supportsNegativePrompt: boolean;
+  supportsLoRA?: boolean;
+  supportsControlNet?: boolean;
+  supportsIPAdapter?: boolean;
+  supportsPaletteConditioning?: boolean;
   supportsDirectionGeneration: boolean;
   supportsBatchDirections: boolean;
   supportsTargetPalette: boolean;
@@ -235,10 +274,10 @@ export interface ProviderCapabilities {
   supportsInpainting: boolean;
   supportsAnimation: boolean;
   supportsSkeletonGuidance: boolean;
-  supportsNegativePrompt: boolean;
   nativePixelOutput: boolean;
   preferredSizes: number[];
   preferredSize: number;
+  workingSize?: number;
   batchIsSequential: boolean;
 }
 
@@ -250,6 +289,15 @@ export interface ProviderInfo {
   nativePixelOutput: boolean;
   notes: string;
   capabilities: ProviderCapabilities;
+  loraPath?: string;
+  loraLoaded?: boolean;
+  loraStrength?: number;
+  controlnetLoaded?: boolean;
+  ipAdapterLoaded?: boolean;
+  fallbackTurbo?: boolean;
+  device?: string;
+  dtype?: string;
+  workingSize?: number;
 }
 
 export interface GenerationJob {
@@ -272,6 +320,7 @@ export interface GenerationResult {
   prompt: PromptLayers;
   usedReference: boolean;
   asset?: SpriteAsset | null;
+  candidates?: SpriteAsset[];
   job?: GenerationJob | null;
 }
 

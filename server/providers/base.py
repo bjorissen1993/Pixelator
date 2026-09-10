@@ -4,18 +4,22 @@ from dataclasses import dataclass, field
 
 from PIL import Image
 
+from models.character import GenerationDebug
 from models.common import ProviderCapabilities, ProviderInfo
 from models.enums import Direction
 from models.generation import PromptLayers
 
 
 class GeneratedImage:
-    def __init__(self, image: Image.Image, seed: int | None, prompt: PromptLayers):
+    def __init__(self, image: Image.Image, seed: int | None, prompt: PromptLayers, debug: GenerationDebug | None = None):
         self.image = image
         self.seed = seed
         self.prompt = prompt
         self.external_id: str | None = None
         self.direction_images: dict[Direction, Image.Image] | None = None
+        self.debug = debug or GenerationDebug()
+        self.used_reference = bool(self.debug.usedReference)
+        self.strength = self.debug.strength
 
 
 @dataclass

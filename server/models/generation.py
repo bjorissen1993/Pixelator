@@ -6,8 +6,10 @@ from models.enums import ApplyMode, Direction, HeadVariant, LayerKind, Rejection
 
 class PromptLayers(BaseModel):
     globalStyle: str = ""
+    visualStyle: str = ""
     masterPrompt: str = ""
     identity: str = ""
+    hardConstraints: str = ""
     state: str = ""
     direction: str = ""
     expression: str = ""
@@ -38,6 +40,7 @@ class GenerateDirectionRequest(BaseModel):
     override: str = ""
     fromDirection: Direction | None = None
     strength: float = 0.42
+    candidateCount: int = Field(default=3, ge=1, le=4)
 
 
 class GenerateDirectionSetRequest(BaseModel):
@@ -46,6 +49,7 @@ class GenerateDirectionSetRequest(BaseModel):
     seed: int | None = None
     override: str = ""
     strength: float = 0.38
+    candidateCount: int = Field(default=3, ge=1, le=4)
 
 
 class GenerateAnimationRequest(BaseModel):
@@ -78,6 +82,13 @@ class MasterPromptRequest(BaseModel):
 
 class AcceptBaseRequest(BaseModel):
     lockPalette: bool = True
+    paletteMode: str = "soft"
+
+
+class AcceptCandidateRequest(BaseModel):
+    stateId: str
+    direction: Direction
+    assetId: str
 
 
 class DirectionStatusRequest(BaseModel):
@@ -133,4 +144,5 @@ class GenerationResult(BaseModel):
     prompt: PromptLayers
     usedReference: bool = False
     asset: SpriteAsset | None = None
+    candidates: list[SpriteAsset] = Field(default_factory=list)
     job: GenerationJob | None = None

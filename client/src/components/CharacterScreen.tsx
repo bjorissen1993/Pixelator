@@ -187,10 +187,13 @@ export function CharacterScreen() {
           </Field>
           <Field label="Palette mode">
             <Select value={draft.paletteMode ?? "generated"} onChange={(event) => set("paletteMode", event.target.value as CharacterProfile["paletteMode"])}>
-              <option value="generated">Generated</option>
+              <option value="unlocked">Unlocked</option>
+              <option value="soft">Soft palette lock</option>
+              <option value="strict">Strict palette lock</option>
+              <option value="generated">Generated (unlocked)</option>
               <option value="project">Project palette</option>
               <option value="custom">Custom palette</option>
-              <option value="locked">Locked character palette</option>
+              <option value="locked">Locked (strict)</option>
             </Select>
           </Field>
           <Field label="Palette colors">

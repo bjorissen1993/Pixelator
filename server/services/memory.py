@@ -104,3 +104,41 @@ def suggestions(character_id: str | None = None) -> MemorySuggestions:
         defaultDetail=accepted[0].detail if accepted else None,
         notes=notes,
     )
+
+
+def generation_hints(character_id: str, direction: Direction | None = None) -> dict:
+    rejected = [entry for entry in list_entries(character_id, "rejected") if direction is None or entry.direction == direction]
+    recent = rejected[:8]
+    strength_delta = 0.0
+    extras: list[str] = []
+    last_reason = recent[0].rejectionReason if recent else None
+    for entry in recent:
+        reason = entry.rejectionReason
+        if reason == "wrong_identity":
+            strength_delta -= 0.08
+            extras.append("match the accepted identity more closely, same face, same beard, same silhouette")
+        elif reason == "wrong_direction":
+            strength_delta += 0.08
+            extras.append("correct compass facing for the requested direction")
+        elif reason == "wrong_clothing":
+            extras.append("same clothing and tunic as the accepted base, do not change outfit")
+        elif reason == "wrong_spirit_form":
+            extras.append("no legs, no boots, spectral lower body, preserve spirit form")
+        elif reason in ("wrong_proportions", "wrong_body_shape"):
+            strength_delta -= 0.05
+            extras.append("same body proportions and height as the accepted base")
+        elif reason == "poor_pixel_quality":
+            extras.append("chunky 2D pixel clusters, hard edges, no blur, no anti-aliasing")
+        elif reason == "wrong_colors":
+            extras.append("quantize toward the accepted character palette")
+        if entry.customReason:
+            extras.append(entry.customReason.strip()[:120])
+    unique: list[str] = []
+    for item in extras:
+        if item and item not in unique:
+            unique.append(item)
+    return {
+        "strength_delta": max(-0.18, min(0.18, strength_delta)),
+        "extra_clauses": unique[:6],
+        "last_reason": last_reason,
+    }

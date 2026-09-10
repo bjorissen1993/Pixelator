@@ -2,7 +2,7 @@
 
 Local-first AI pixel character workspace. Character System v2.1 is a visual sprite studio: generate a base, accept it as an identity reference, then generate 8 directions as one job.
 
-The default local backend is still Diffusers (SDXL Turbo unless you change it). Turbo generates at 512px, then Pixelator pixelizes that raster. **That cannot match PixelLab.** For PixelLab quality, set `PIXELLAB_API_KEY` from [your PixelLab account](https://pixellab.ai/account). Pixelator then calls PixelLab's `create-character-v3` API and keeps the native sprite. Credits are billed by PixelLab. This is not a clone of their product.
+Generation Engine v2 is a provider abstraction. **SDXL-Turbo is fallback only** and is not a pixel-art checkpoint. For professional sprites, set a pixel-art `MODEL_ID` / `LORA_PATH`, or `PIXELLAB_API_KEY` from [your PixelLab account](https://pixellab.ai/account).
 
 ## Requirements
 - Node.js 20+
@@ -34,24 +34,32 @@ Open the printed localhost URL. Vite proxies `/api`, `/health`, and `/data` to F
 
 ## Environment
 ```
+PIXELATOR_PROVIDER=auto
 MODEL_ID=stabilityai/sdxl-turbo
 PIXEL_MODEL_ID=
-PIXELLAB_API_KEY=
+LORA_PATH=
+LORA_STRENGTH=0.8
+CONTROLNET_MODEL=
+IP_ADAPTER_MODEL=
 DEVICE=cuda
-ENABLE_BG_REMOVAL=true
-GENERATION_SIZE=512
+DTYPE=
+WORKING_SIZE=128
+GENERATION_SIZE=128
 INFERENCE_STEPS=4
 GUIDANCE_SCALE=0
+CANDIDATE_COUNT=3
+PIXELLAB_API_KEY=
+ENABLE_BG_REMOVAL=true
 ```
 
-`PIXELLAB_API_KEY` switches the studio to PixelLab's official API (`create-character-v3`, 8 directions, animation). Without it, local Turbo stays the backend and will not look like PixelLab. `GENERATION_SIZE` is only for the local Diffusers raster. `PIXEL_MODEL_ID` selects a local pixel-oriented checkpoint.
+`PIXELATOR_PROVIDER` is `auto`, `pixellab`, `diffusers`, or `pixel-diffusers`. `auto` uses PixelLab when `PIXELLAB_API_KEY` is set, otherwise the local Diffusers model. `WORKING_SIZE` presets: `native48`, `64`, `96`, `128`, `256`, `512`. Local rasters are reduced to the 48×48 sprite with nearest/block-mode, never Lanczos. Turbo fallback still renders at 512 internally because that checkpoint is not native pixel-art.
 
 ## Workflow
-1. Generate Base → review Pending Sprite → Accept as Base. Re-pixelize re-runs cleanup on the last source without a new model pass.
-2. Accepted Base is the img2img identity reference (source image, not just prompt text)
-3. Generate 8 Directions as one operation (PixelLab returns them as a set; local Diffusers is sequential)
-4. Accept / reject / lock / regenerate individual facings
-5. Add states and animations from accepted identity
+1. Generate Base → review Pending Sprite → Accept as Base (soft palette lock). Re-pixelize re-runs cleanup on the last source without a new model pass.
+2. Accepted Base is a real img2img / neighbor-graph identity reference
+3. Generate 8 Directions sequentially (S → SW → W → NW → N → NE → E → SE). Each facing produces 2–4 candidates.
+4. Accept one candidate. Accepted directions are not overwritten.
+5. Reject with a reason; the next regenerate uses that feedback in the prompt/strength. This is not model training.
 6. Export sprite sheets, metadata, or an accepted-only training dataset (no training is performed)
 
 ## Data

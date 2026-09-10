@@ -4,13 +4,13 @@ from models.generation import PromptLayers
 from prompts.direction import direction_prompt
 from prompts.expression import expression_prompt
 from prompts.global_style import global_style
-from prompts.identity import identity_constraints
+from prompts.identity import hard_constraints, identity_constraints
 from prompts.state_prompts import state_prompt
 
 DEFAULT_NEGATIVE = (
-    "photorealistic, 3D render, blurry, smooth gradients, anti-aliasing, dithering, "
-    "noisy speckles, jpeg artifacts, painterly, extra characters, scenery, text, watermark, "
-    "modern clothing unless requested"
+    "3D render, realistic painting, smooth gradients, PBR, photographic, extra limbs, legs, boots, armor, "
+    "weapon unless requested, blurry, anti-aliased, different outfit, different hair, different beard, "
+    "photorealistic, dithering, noisy speckles, jpeg artifacts, painterly, extra characters, scenery, text, watermark"
 )
 
 
@@ -21,7 +21,7 @@ def _join(parts: list[str]) -> str:
 def build_negative(character: CharacterProfile) -> str:
     parts = [DEFAULT_NEGATIVE, character.negativePrompt]
     if character.spirit.enabled or character.spirit.noLegs:
-        parts.append("human legs, boots, feet, armor, weapons unless requested")
+        parts.append("human legs, boots, feet, armor, weapons unless requested, bipedal standing pose")
     return _join(parts)
 
 
@@ -37,18 +37,24 @@ def build_prompt(
     from_direction: Direction | None = None,
     action: str = "",
     embed_negative: bool = True,
+    extra_clauses: list[str] | None = None,
 ) -> PromptLayers:
+    visual = global_style(
+        character.camera,
+        character.detail,
+        character.outline,
+        character.shading,
+        character.bodyTemplate,
+        character.spriteSize,
+    )
+    identity = identity_constraints(character)
+    constraints = hard_constraints(character)
     layers = PromptLayers(
-        globalStyle=global_style(
-            character.camera,
-            character.detail,
-            character.outline,
-            character.shading,
-            character.bodyTemplate,
-            character.spriteSize,
-        ),
+        globalStyle=visual,
+        visualStyle=visual,
         masterPrompt=character.masterPrompt,
-        identity=identity_constraints(character),
+        identity=identity,
+        hardConstraints=constraints,
         state=state_prompt(state) if state else "neutral full-body identity pose, canonical reference stance",
         direction=direction_prompt(direction, character.camera, from_direction)
         if direction
@@ -60,7 +66,7 @@ def build_prompt(
         negative=build_negative(character),
     )
 
-    extras: list[str] = []
+    extras: list[str] = list(extra_clauses or [])
     if layer == "head":
         extras.append("head and shoulders portrait crop for a pixel sprite head layer, no full body")
     elif layer == "body":
@@ -76,11 +82,12 @@ def build_prompt(
 
     layers.final = _join(
         [
-            layers.globalStyle,
-            layers.masterPrompt,
             layers.identity,
-            layers.state,
+            layers.visualStyle,
+            layers.masterPrompt,
             layers.direction,
+            layers.state,
+            layers.hardConstraints,
             layers.expression,
             layers.override,
             *extras,
@@ -100,6 +107,7 @@ def build_pixellab_description(character: CharacterProfile, override: str = "") 
     spirit = character.spirit
     if spirit.enabled or spirit.noLegs:
         parts.append(spirit.notes or "legless ghost, no legs, no boots, lower body fades into spectral mist, floating spirit tail")
+    parts.append(hard_constraints(character))
     if override.strip():
         parts.append(override.strip())
     return _join(parts)[:2000]

@@ -97,6 +97,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  acceptCandidate: (id: string, stateId: string, direction: Direction, assetId: string) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/accept-candidate`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction, assetId }),
+    }),
   acceptDirection: (id: string, stateId: string, direction: Direction) =>
     request<CharacterProfile>(`/api/characters/${id}/directions/accept`, {
       method: "POST",

@@ -80,9 +80,12 @@ export function Workspace() {
             <h2>{character?.name ?? "No character"}</h2>
             <p>
               Provider {provider?.name ?? "unknown"} · {provider?.modelId}
-              {provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · pixelize pipeline"}
-              {provider?.capabilities?.supportsReferenceImage ? " · reference img2img" : ""}
-              {provider?.capabilities?.batchIsSequential ? " · 8-dir sequential" : ""}
+              {provider?.fallbackTurbo ? " · fallback Turbo" : provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · pixelize pipeline"}
+              {provider?.loraLoaded ? " · LoRA loaded" : provider?.loraPath ? " · LoRA failed" : " · no LoRA"}
+              {provider?.capabilities?.supportsImg2Img || provider?.capabilities?.supportsReferenceImage ? " · reference img2img" : " · no img2img"}
+              {provider?.ipAdapterLoaded ? " · IP-Adapter" : ""}
+              {` · work ${provider?.workingSize ?? provider?.capabilities?.workingSize ?? "?"}px`}
+              {character?.acceptedBase ? ` · palette ${character.paletteMode}` : ""}
               {character?.acceptedBase ? " · base locked" : ""}
             </p>
           </div>

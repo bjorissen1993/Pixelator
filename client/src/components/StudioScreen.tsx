@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { EXPORT_DIRECTION_ORDER, FRAME_COUNTS, REJECTION_REASONS } from "@shared";
-import type { Direction, DirectionSlot, RejectionReason } from "@shared";
+import type { Direction, DirectionSlot, RejectionReason, SpriteAsset } from "@shared";
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { Button, PixelImage, Select, SpritePreviewCard, TextInput } from "./ui";
+import { Button, PixelImage, Select, SpritePreviewCard } from "./ui";
 
 const GRID: Array<Direction | "REF"> = ["NW", "N", "NE", "W", "REF", "E", "SW", "S", "SE"];
 
@@ -11,6 +12,54 @@ function slotStatus(slot?: DirectionSlot) {
   if (slot.locked) return "locked";
   if (slot.status && slot.status !== "missing") return slot.status;
   return slot.frames[0] ? "pending" : "missing";
+}
+
+function QualityBlock({ asset }: { asset?: SpriteAsset }) {
+  const validation = asset?.validation;
+  if (!validation) return null;
+  return (
+    <div className="quality-block">
+      <p className="hint">
+        Quality score <strong>{validation.score ?? "—"}</strong>
+        {validation.ok ? "" : " · has errors"}
+      </p>
+      {validation.warnings.length ? (
+        <ul className="quality-warnings">
+          {validation.warnings.map((warning) => (
+            <li key={warning.code}>
+              {warning.message}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="hint">No quality warnings.</p>
+      )}
+    </div>
+  );
+}
+
+function DebugBlock({ asset }: { asset?: SpriteAsset }) {
+  const debug = asset?.debug;
+  if (!debug) return null;
+  return (
+    <details className="debug-panel">
+      <summary>Generation debug</summary>
+      <dl>
+        <div><dt>provider</dt><dd>{debug.provider || "—"}</dd></div>
+        <div><dt>model</dt><dd>{debug.model || "—"}</dd></div>
+        <div><dt>LoRA</dt><dd>{debug.loraLoaded ? debug.lora || "loaded" : "not loaded"}</dd></div>
+        <div><dt>seed</dt><dd>{debug.seed ?? "—"}</dd></div>
+        <div><dt>steps</dt><dd>{debug.steps ?? "—"}</dd></div>
+        <div><dt>guidance</dt><dd>{debug.guidance ?? "—"}</dd></div>
+        <div><dt>img2img strength</dt><dd>{debug.strength ?? "—"}</dd></div>
+        <div><dt>reference</dt><dd>{debug.usedReference ? `${debug.referenceDirection || "base"} ${debug.referenceAssetId || ""}` : "none"}</dd></div>
+        <div><dt>working / target</dt><dd>{debug.workingResolution ?? "—"} → {debug.targetResolution ?? "—"}</dd></div>
+        <div><dt>palette</dt><dd>{debug.paletteMode || "—"}</dd></div>
+        <div><dt>prompt</dt><dd>{debug.prompt || "—"}</dd></div>
+        <div><dt>negative</dt><dd>{debug.negativePrompt || "—"}</dd></div>
+      </dl>
+    </details>
+  );
 }
 
 export function StudioScreen() {
@@ -29,6 +78,7 @@ export function StudioScreen() {
     setCharacter,
     templates,
   } = useWorkspace();
+  const [rejectReason, setRejectReason] = useState<RejectionReason>("wrong_direction");
   if (!character) return null;
   const state = character.states.find((item) => item.id === selectedStateId) ?? character.states[0];
   const locked = generating || !!busy;
@@ -244,7 +294,32 @@ export function StudioScreen() {
               <p className="hint">
                 Status: <strong>{slotStatus(selectedSlot)}</strong>
                 {selectedSlot.seed != null ? ` · seed ${selectedSlot.seed}` : ""}
+                {selectedSlot.frames[0]?.referenceDirection ? ` · ref ${selectedSlot.frames[0].referenceDirection}` : ""}
               </p>
+              <QualityBlock asset={selectedSlot.frames[0]} />
+              {selectedSlot.candidates && selectedSlot.candidates.length > 0 ? (
+                <div>
+                  <p className="hint">Candidates — accept one. Accepted directions are not overwritten until you pick.</p>
+                  <div className="frame-strip">
+                    {selectedSlot.candidates.map((asset, index) => (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        className={`candidate-btn ${selectedSlot.frames[0]?.id === asset.id ? "active" : ""}`}
+                        disabled={locked || selectedSlot.locked}
+                        onClick={() =>
+                          run("Accepting candidate", () => api.acceptCandidate(character.id, state.id, selectedDirection, asset.id).then(setCharacter), {
+                            generating: false,
+                          })
+                        }
+                      >
+                        <PixelImage asset={asset} size={character.spriteSize} scale={2} empty={`C${index + 1}`} />
+                        <span>{asset.validation?.score ?? "—"}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="chip-row">
                 <Button
                   disabled={locked || !selectedSlot.frames[0]}
@@ -256,7 +331,7 @@ export function StudioScreen() {
                   variant="danger"
                   disabled={locked || !selectedSlot.frames[0]}
                   onClick={() =>
-                    run("Rejecting direction", () => api.rejectDirection(character.id, state.id, selectedDirection, "wrong_direction").then(setCharacter), { generating: false })
+                    run("Rejecting direction", () => api.rejectDirection(character.id, state.id, selectedDirection, rejectReason).then(setCharacter), { generating: false })
                   }
                 >
                   Reject
@@ -301,12 +376,8 @@ export function StudioScreen() {
               <label className="field">
                 <span>Reject reason</span>
                 <Select
-                  defaultValue="wrong_direction"
-                  onChange={(event) => {
-                    const reason = event.target.value as RejectionReason;
-                    if (!selectedSlot.frames[0]) return;
-                    run("Rejecting direction", () => api.rejectDirection(character.id, state.id, selectedDirection, reason).then(setCharacter), { generating: false });
-                  }}
+                  value={rejectReason}
+                  onChange={(event) => setRejectReason(event.target.value as RejectionReason)}
                 >
                   {REJECTION_REASONS.map((reason) => (
                     <option key={reason} value={reason}>
@@ -355,6 +426,7 @@ export function StudioScreen() {
                   ))}
                 </div>
               ) : null}
+              <DebugBlock asset={selectedSlot.frames[0] || selectedSlot.candidates?.[0]} />
             </>
           )}
         </section>

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, HTTPException
 
 from models.generation import (
     AcceptBaseRequest,
+    AcceptCandidateRequest,
     DirectionStatusRequest,
     GenerateAnimationRequest,
     GenerateBaseRequest,
@@ -50,7 +51,7 @@ def generate_base(character_id: str, payload: GenerateBaseRequest = Body(default
 @router.post("/api/characters/{character_id}/accept-base")
 def accept_base(character_id: str, payload: AcceptBaseRequest = Body(default_factory=AcceptBaseRequest)):
     try:
-        return generation_service.accept_base(character_id, payload.lockPalette)
+        return generation_service.accept_base(character_id, payload.lockPalette, payload.paletteMode)
     except Exception as exc:
         _http(exc)
 
@@ -115,9 +116,17 @@ def generate_direction_set(character_id: str, payload: GenerateDirectionSetReque
             "Generate 8 Directions",
             8,
             lambda job_id: generation_service.generate_direction_set(
-                character_id, payload.stateId, payload.useReference, payload.seed, payload.override, payload.strength, job_id
+                character_id, payload.stateId, payload.useReference, payload.seed, payload.override, payload.strength, job_id, payload.candidateCount
             ),
         )
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/directions/accept-candidate")
+def accept_candidate(character_id: str, payload: AcceptCandidateRequest):
+    try:
+        return generation_service.accept_candidate(character_id, payload.stateId, payload.direction, payload.assetId)
     except Exception as exc:
         _http(exc)
 
@@ -227,6 +236,9 @@ def generate_direction(character_id: str, payload: GenerateDirectionRequest):
             payload.useReference,
             payload.seed,
             payload.override,
+            payload.fromDirection,
+            payload.strength,
+            candidate_count=payload.candidateCount,
         )
     except Exception as ext:
         _http(ext)

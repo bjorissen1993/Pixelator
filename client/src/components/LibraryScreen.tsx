@@ -30,7 +30,8 @@ export function LibraryScreen() {
             pixellab.ai/account
           </a>{" "}
           into <code>server/.env</code> as <code>PIXELLAB_API_KEY</code>, then restart the backend. Without that key,
-          Pixelator stays on local SDXL-Turbo and will not look like the PixelLab character studio.
+          Pixelator stays on the configured local Diffusers model (SDXL-Turbo if you have not set a pixel checkpoint).
+          Optional: <code>PIXELATOR_PROVIDER</code>, <code>MODEL_ID</code>, <code>LORA_PATH</code>, <code>WORKING_SIZE</code>.
         </p>
       </Section>
       <Section title="Style profiles">

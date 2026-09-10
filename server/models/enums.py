@@ -6,7 +6,7 @@ CameraAngle = Literal["high-top-down", "low-top-down", "side", "front"]
 DetailLevel = Literal["low", "medium", "high", "simple", "balanced"]
 OutlineStyle = Literal["black", "colored", "selective", "lineless", "none", "soft", "dark"]
 ShadingStyle = Literal["none", "basic", "medium", "detailed"]
-PaletteMode = Literal["generated", "project", "custom", "locked"]
+PaletteMode = Literal["generated", "project", "custom", "locked", "strict", "soft", "unlocked"]
 BodyTemplate = Literal["bipedal", "semi-chibi-bipedal", "quadrupedal", "custom"]
 AssetStatus = Literal["missing", "pending", "accepted", "rejected", "locked"]
 JobStatus = Literal["queued", "generating", "processing", "completed", "failed"]
@@ -16,6 +16,7 @@ RejectionReason = Literal[
     "wrong_clothing",
     "wrong_colors",
     "wrong_body_shape",
+    "wrong_proportions",
     "wrong_direction",
     "wrong_pose",
     "wrong_spirit_form",

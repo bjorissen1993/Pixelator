@@ -53,8 +53,14 @@ class PixelLabProvider(GenerationProvider):
             ),
             capabilities=ProviderCapabilities(
                 supportsTextToImage=True,
-                supportsReferenceImage=True,
+                supportsImg2Img=True,
                 supportsImageToImage=True,
+                supportsReferenceImage=True,
+                supportsNegativePrompt=False,
+                supportsLoRA=False,
+                supportsControlNet=False,
+                supportsIPAdapter=False,
+                supportsPaletteConditioning=False,
                 supportsDirectionGeneration=True,
                 supportsBatchDirections=True,
                 supportsTargetPalette=False,
@@ -62,12 +68,16 @@ class PixelLabProvider(GenerationProvider):
                 supportsInpainting=False,
                 supportsAnimation=True,
                 supportsSkeletonGuidance=True,
-                supportsNegativePrompt=False,
                 nativePixelOutput=True,
                 preferredSizes=[32, 48, 64, 96, 128],
                 preferredSize=min(128, max(32, self.size)),
+                workingSize=min(128, max(32, self.size)),
                 batchIsSequential=False,
             ),
+            fallbackTurbo=False,
+            workingSize=min(128, max(32, self.size)),
+            device="api",
+            dtype="",
         )
 
     def _description(self, prompt: PromptLayers) -> str:

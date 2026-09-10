@@ -20,9 +20,12 @@ export function GenerationPanel() {
     <div className="stack">
       <Section title="Generation">
         <p className="hint">
-          Provider: <strong>{provider?.name ?? "unknown"}</strong> · model {provider?.modelId}. Native pixel output:{" "}
-          {provider?.nativePixelOutput ? "yes" : "no — local Turbo cannot match PixelLab. Set PIXELLAB_API_KEY in server/.env"}. Reference:{" "}
-          {provider?.supportsReference ? "available" : "not loaded"}.
+          Provider: <strong>{provider?.name ?? "unknown"}</strong> · model {provider?.modelId}
+          {provider?.fallbackTurbo ? " (fallback SDXL-Turbo, not a pixel checkpoint)" : ""}.
+          LoRA: {provider?.loraLoaded ? "loaded" : "not loaded"}.
+          Native pixel output: {provider?.nativePixelOutput && !provider?.fallbackTurbo ? "yes" : "no"}.
+          Reference img2img: {provider?.supportsReference || provider?.capabilities?.supportsImg2Img ? "yes" : "no"}.
+          Working size: {provider?.workingSize ?? provider?.capabilities?.workingSize ?? "?"}px.
         </p>
         <div className="action-grid">
           <Button disabled={generating || !!busy} onClick={() => go("Generating base", () => api.generateBase(character.id))}>

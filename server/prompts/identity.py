@@ -46,3 +46,39 @@ def identity_constraints(character: CharacterProfile) -> str:
         parts.append(", ".join(bit for bit in spirit_bits if bit))
 
     return ", ".join(part for part in parts if part)
+
+
+def hard_constraints(character: CharacterProfile) -> str:
+    lock = character.identityLock
+    parts: list[str] = [
+        "preserve clothing",
+        "preserve face",
+        "preserve silhouette",
+        "preserve body proportions",
+        "preserve palette",
+        "preserve accessories",
+        "preserve spirit form",
+        "same character, not a redesign",
+    ]
+    if lock.lockClothing or character.clothing:
+        parts.append(f"same tunic and outfit: {character.clothing}" if character.clothing else "same tunic and outfit")
+    if lock.lockFace or "beard" in (character.appearance or "").lower() or "beard" in character.masterPrompt.lower():
+        parts.append("same beard, same hair")
+    if character.spirit.enabled or character.spirit.noLegs or lock.lockSpiritForm:
+        parts.extend(
+            [
+                "no armor",
+                "no legs",
+                "no boots",
+                "no feet",
+                "spectral lower body",
+                "same proportions",
+            ]
+        )
+    if "berwynn" in character.name.lower() or "berwynn" in character.slug.lower() or "berwynn" in character.masterPrompt.lower():
+        parts.extend(
+            [
+                "Berwynn identity lock: no armor, no legs, no boots, spectral lower body, same tunic, same beard, same proportions",
+            ]
+        )
+    return ", ".join(parts)

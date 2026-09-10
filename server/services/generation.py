@@ -5,8 +5,8 @@ from uuid import uuid4
 from PIL import Image
 
 import config
-from domain.directions import EXPORT_DIRECTION_ORDER, HEAD_VARIANTS
-from models.character import AcceptedBase, CharacterProfile, HeadAnchor, SpriteAsset
+from domain.directions import EXPORT_DIRECTION_ORDER, HEAD_VARIANTS, closest_reference
+from models.character import AcceptedBase, CharacterProfile, GenerationDebug, HeadAnchor, SpriteAsset
 from models.enums import Direction, HeadVariant, LayerKind
 from models.generation import PromptLayers
 from persistence.store import asset_path
@@ -65,8 +65,18 @@ def resolve_seed(character: CharacterProfile, requested: int | None = None, mode
     return character.seed
 
 
+def palette_mode_name(character: CharacterProfile) -> str:
+    mode = character.paletteMode
+    if mode == "locked":
+        return "strict"
+    if mode == "generated":
+        return "unlocked"
+    return mode
+
+
 def palette_colors(character: CharacterProfile) -> list[tuple[int, int, int]] | None:
-    if character.paletteMode in ("locked", "custom", "project") or (
+    mode = palette_mode_name(character)
+    if mode in ("strict", "soft", "custom", "project") or (
         character.identityLock.lockPalette and character.palette.locked and character.palette.colors
     ):
         return locked_palette(character)
@@ -85,17 +95,30 @@ def locked_palette(character: CharacterProfile) -> list[tuple[int, int, int]] | 
     return colors or None
 
 
-def process_generated(character: CharacterProfile, image: Image.Image):
-    native = get_provider().capabilities.nativePixelOutput
+def identity_sprite(character: CharacterProfile) -> Image.Image | None:
+    if character.acceptedBase is None:
+        return None
+    return load_image(character.acceptedBase.sprite.path)
+
+
+def process_generated(character: CharacterProfile, image: Image.Image, direction=None):
+    provider = get_provider()
+    native = provider.capabilities.nativePixelOutput
+    skip_palette = native and provider.info.id == "pixellab"
+    working = character.spriteSize if native else max(character.spriteSize, config.WORKING_SIZE)
     return pipeline.process(
         image,
         character.spriteSize,
         character.palette.colorCount,
         character.outline,
         False if native else config.ENABLE_BG_REMOVAL,
-        None if native else palette_colors(character),
+        None if skip_palette else palette_colors(character),
         on_step=lambda step: progress.set_step(character.id, step),
         native=native,
+        working_size=working,
+        palette_mode=palette_mode_name(character),
+        reference=identity_sprite(character),
+        direction=direction,
     )
 
 
@@ -113,6 +136,10 @@ def make_asset(
     negative: str = "",
     status: str = "pending",
     from_direction: Direction | None = None,
+    reference_direction: Direction | None = None,
+    reference_asset_id: str = "",
+    strength: float | None = None,
+    debug: GenerationDebug | None = None,
 ) -> SpriteAsset:
     progress.set_step(character.id, "saving preview")
     path = save_image(character.slug, relative, image)
@@ -122,6 +149,22 @@ def make_asset(
     if source is not None:
         source_rel = relative[:-4] + "-source.png" if relative.endswith(".png") else relative + "-source.png"
         source_path = save_image(character.slug, source_rel, source.convert("RGBA"))
+    info = get_provider().info
+    debug = debug or GenerationDebug()
+    debug.provider = debug.provider or info.id
+    debug.model = debug.model or info.modelId
+    debug.lora = debug.lora or (info.loraPath if info.loraLoaded else "")
+    debug.loraLoaded = debug.loraLoaded or info.loraLoaded
+    debug.seed = seed if seed is not None else debug.seed
+    debug.prompt = debug.prompt or prompt
+    debug.negativePrompt = debug.negativePrompt or negative
+    debug.workingResolution = debug.workingResolution or info.workingSize or config.WORKING_SIZE
+    debug.targetResolution = character.spriteSize
+    debug.paletteMode = character.paletteMode
+    debug.referenceDirection = reference_direction or debug.referenceDirection
+    debug.referenceAssetId = reference_asset_id or debug.referenceAssetId
+    debug.strength = strength if strength is not None else debug.strength
+    debug.usedReference = debug.usedReference or bool(reference_asset_id or reference_direction)
     return SpriteAsset(
         id=new_id(),
         kind=kind,  # type: ignore[arg-type]
@@ -138,8 +181,12 @@ def make_asset(
         status=status,  # type: ignore[arg-type]
         validation=validation,
         head=head,
-        providerId=get_provider().info.id,
+        providerId=info.id,
         fromDirection=from_direction,
+        referenceDirection=reference_direction,
+        referenceAssetId=reference_asset_id,
+        strength=strength,
+        debug=debug,
     )
 
 
@@ -148,7 +195,7 @@ def reference_image(character: CharacterProfile, direction: Direction | None = N
         try:
             state = character_service.find_state(character, state_id)
             slot = character_service.find_slot(state, direction)
-            if slot.frames and slot.status in ("accepted", "locked"):
+            if slot.frames and slot.status in ("accepted", "locked", "pending"):
                 asset = slot.frames[0]
                 return load_image(asset.sourcePath or asset.path)
         except KeyError:
@@ -157,6 +204,40 @@ def reference_image(character: CharacterProfile, direction: Direction | None = N
         return None
     asset = character.acceptedBase.sprite
     return load_image(asset.sourcePath or asset.path)
+
+
+def resolve_direction_reference(
+    character: CharacterProfile,
+    state,
+    direction: Direction,
+    requested_from: Direction | None,
+    use_reference: bool,
+):
+    if not use_reference:
+        return None, "", None
+    accepted: list[Direction] = []
+    generated: list[Direction] = []
+    assets: dict[Direction, SpriteAsset] = {}
+    for slot in state.directions:
+        if not slot.frames:
+            continue
+        assets[slot.direction] = slot.frames[0]
+        if slot.locked or slot.status in ("accepted", "locked"):
+            accepted.append(slot.direction)
+        elif slot.status == "pending":
+            generated.append(slot.direction)
+    target_from = requested_from or closest_reference(direction, accepted) or closest_reference(direction, generated)
+    ref_image = None
+    ref_id = ""
+    if target_from and target_from in assets:
+        asset = assets[target_from]
+        ref_image = load_image(asset.sourcePath or asset.path)
+        ref_id = asset.id
+    if ref_image is None and character.acceptedBase:
+        ref_image = load_image(character.acceptedBase.sprite.sourcePath or character.acceptedBase.sprite.path)
+        ref_id = character.acceptedBase.sprite.id
+        target_from = target_from or "S"
+    return target_from, ref_id, ref_image
 
 
 def provider_prompt(character: CharacterProfile, prompt: PromptLayers, override: str = "") -> PromptLayers:
@@ -181,12 +262,14 @@ def generate_image(
     model_prompt = provider_prompt(character, prompt)
     ref = init_image or (reference_image(character, direction, state_id) if use_reference else None)
     used_reference = False
-    if ref is not None and provider.capabilities.supportsReferenceImage:
-        generated = provider.generate_from_reference(model_prompt, ref, seed=seed, strength=strength, init_image=init_image)
+    if ref is not None and (
+        provider.capabilities.supportsReferenceImage or provider.capabilities.supportsImg2Img or provider.capabilities.supportsImageToImage
+    ):
+        generated = provider.generate_from_reference(model_prompt, ref, seed=seed, strength=strength, init_image=init_image or ref)
         used_reference = True
     else:
         generated = provider.generate_direction(model_prompt, seed=seed)
-    sprite, preview, validation = process_generated(character, generated.image)
+    sprite, preview, validation = process_generated(character, generated.image, direction=direction)
     return generated, sprite, preview, validation, used_reference
 
 
@@ -242,6 +325,7 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
             preview,
             source=generated.image,
             negative=prompt.negative,
+            debug=generated.debug,
         )
         character.pendingBase = asset
         character_service.save_character(character)
@@ -289,15 +373,21 @@ def _copy_pending_to_accepted(character: CharacterProfile, lock_palette: bool) -
         character.palette.colors = [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette]
         character.palette.locked = True
         character.identityLock.lockPalette = True
-        character.paletteMode = "locked"
+        character.paletteMode = "soft"
     saved = character_service.save_character(character)
     memory.record(saved, "accepted", accepted_asset, state_name="base", provider_id=get_provider().info.id)
     return saved
 
 
-def accept_base(character_id: str, lock_palette: bool = True) -> CharacterProfile:
+def accept_base(character_id: str, lock_palette: bool = True, palette_mode: str = "soft") -> CharacterProfile:
     character = character_service.get_character(character_id)
-    return _copy_pending_to_accepted(character, lock_palette)
+    saved = _copy_pending_to_accepted(character, lock_palette)
+    if lock_palette:
+        saved.paletteMode = palette_mode if palette_mode in ("soft", "strict", "unlocked") else "soft"
+        if saved.paletteMode == "unlocked":
+            saved.palette.locked = False
+        character_service.save_character(saved)
+    return saved
 
 
 def replace_base(character_id: str) -> CharacterProfile:
@@ -392,6 +482,7 @@ def generate_direction(
     from_direction: Direction | None = None,
     strength: float = 0.42,
     job_id: str | None = None,
+    candidate_count: int | None = None,
 ) -> dict:
     nested = _track(character_id, "Generating direction")
     try:
@@ -400,8 +491,18 @@ def generate_direction(
         character_service.ensure_slots(state, character.spriteSize)
         slot = character_service.find_slot(state, direction)
         if slot.locked and frame_index == 0:
-            return {"character": character, "prompt": build_prompt(character, state, direction), "usedReference": False, "asset": slot.frames[0] if slot.frames else None}
-        from_dir = from_direction or ("S" if character.acceptedBase else None)
+            return {
+                "character": character,
+                "prompt": build_prompt(character, state, direction),
+                "usedReference": False,
+                "asset": slot.frames[0] if slot.frames else None,
+                "candidates": slot.candidates,
+            }
+        hints = memory.generation_hints(character.id, direction)
+        strength = max(0.12, min(0.85, strength + hints["strength_delta"]))
+        from_dir, ref_asset_id, ref_image = resolve_direction_reference(
+            character, state, direction, from_direction, use_reference
+        )
         prompt = build_prompt(
             character,
             state=state,
@@ -411,65 +512,134 @@ def generate_direction(
             frame_index=frame_index,
             frame_count=state.frameCount,
             from_direction=from_dir,  # type: ignore[arg-type]
+            extra_clauses=hints["extra_clauses"],
         )
         chosen_seed = resolve_seed(character, seed if seed is not None else slot.seed, "reuse_base")
         native_images = native_direction_images(character, prompt, chosen_seed)
         if native_images.get(direction):
             asset = _save_direction_image(
-                character, state, slot, direction, native_images[direction], prompt, chosen_seed, from_dir  # type: ignore[arg-type]
+                character,
+                state,
+                slot,
+                direction,
+                native_images[direction],
+                prompt,
+                chosen_seed,
+                from_dir,  # type: ignore[arg-type]
+                reference_asset_id=ref_asset_id,
+                strength=strength,
             )
+            slot.candidates = [asset]
             character_service.save_character(character)
             if job_id:
                 jobs.set_progress(job_id, 1, 1, direction, "processing")
-            return {"character": character, "prompt": prompt, "usedReference": True, "asset": asset}
-        generated, sprite, preview, validation, used_reference = generate_image(
-            character,
-            prompt,
-            use_reference=use_reference,
-            seed=chosen_seed,
-            strength=strength,
-            state_id=state_id,
-            direction=from_dir,  # type: ignore[arg-type]
-        )
-        if not slot.frames:
-            slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
-        relative = f"states/{state.id}/{direction}/{layer}_frame_{frame_index:02d}.png"
-        asset = make_asset(
-            character,
-            sprite,
-            relative,
-            prompt.final,
-            generated.seed,
-            layer,
-            validation,
-            slot.headAnchor,
-            preview,
-            source=generated.image,
-            negative=prompt.negative,
-            from_direction=from_dir,  # type: ignore[arg-type]
-        )
+            return {
+                "character": character,
+                "prompt": prompt,
+                "usedReference": True,
+                "asset": asset,
+                "candidates": slot.candidates,
+            }
+
+        count = candidate_count or config.CANDIDATE_COUNT
+        if layer != "full":
+            count = 1
+        candidates: list[SpriteAsset] = []
+        used_reference = False
+        for index in range(count):
+            cand_seed = None if chosen_seed is None else chosen_seed + index * 7919
+            generated, sprite, preview, validation, used_reference = generate_image(
+                character,
+                prompt,
+                use_reference=use_reference,
+                seed=cand_seed,
+                strength=strength,
+                init_image=ref_image,
+                state_id=state_id,
+                direction=direction,
+            )
+            if not slot.frames and index == 0:
+                slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
+            relative = f"states/{state.id}/{direction}/{layer}_frame_{frame_index:02d}_c{index}.png"
+            debug = generated.debug
+            if debug:
+                debug.usedReference = used_reference
+                debug.referenceDirection = from_dir
+                debug.referenceAssetId = ref_asset_id
+                debug.strength = strength
+            asset = make_asset(
+                character,
+                sprite,
+                relative,
+                prompt.final,
+                generated.seed,
+                layer,
+                validation,
+                slot.headAnchor,
+                preview,
+                source=generated.image,
+                negative=prompt.negative,
+                from_direction=from_dir,  # type: ignore[arg-type]
+                reference_direction=from_dir,  # type: ignore[arg-type]
+                reference_asset_id=ref_asset_id,
+                strength=strength,
+                debug=debug,
+            )
+            candidates.append(asset)
+
         if layer == "full":
-            while len(slot.frames) <= frame_index:
-                slot.frames.append(asset)
-            slot.frames[frame_index] = asset
-            slot.status = "pending"
-            slot.seed = generated.seed
-            if state.headSeparated:
-                head, body = split_head_body(sprite, slot.headAnchor)
-                slot.head = make_asset(
-                    character, head, f"states/{state.id}/{direction}/head.png", prompt.final, generated.seed, "head", validation, slot.headAnchor, source=generated.image, negative=prompt.negative
-                )
-                slot.body = make_asset(
-                    character, body, f"states/{state.id}/{direction}/body.png", prompt.final, generated.seed, "body", validation, slot.headAnchor, source=generated.image, negative=prompt.negative
-                )
+            slot.candidates = candidates
+            preview_asset = max(candidates, key=lambda item: item.validation.score if item.validation else 0)
+            accepted = slot.status in ("accepted", "locked") or slot.locked
+            if not accepted:
+                while len(slot.frames) <= frame_index:
+                    slot.frames.append(preview_asset)
+                slot.frames[frame_index] = preview_asset
+                slot.status = "pending"
+                slot.seed = preview_asset.seed
+                if state.headSeparated:
+                    sprite_image = load_image(preview_asset.path)
+                    if sprite_image is not None:
+                        head, body = split_head_body(sprite_image, slot.headAnchor)
+                        slot.head = make_asset(
+                            character,
+                            head,
+                            f"states/{state.id}/{direction}/head.png",
+                            prompt.final,
+                            preview_asset.seed,
+                            "head",
+                            preview_asset.validation,
+                            slot.headAnchor,
+                            negative=prompt.negative,
+                        )
+                        slot.body = make_asset(
+                            character,
+                            body,
+                            f"states/{state.id}/{direction}/body.png",
+                            prompt.final,
+                            preview_asset.seed,
+                            "body",
+                            preview_asset.validation,
+                            slot.headAnchor,
+                            negative=prompt.negative,
+                        )
+            asset = preview_asset if not accepted else (slot.frames[0] if slot.frames else preview_asset)
         elif layer == "head":
-            slot.head = asset
-        elif layer == "body":
-            slot.body = asset
+            slot.head = candidates[0]
+            asset = candidates[0]
+        else:
+            slot.body = candidates[0]
+            asset = candidates[0]
         character_service.save_character(character)
         if job_id:
             jobs.set_progress(job_id, 1, 1, direction, "processing")
-        return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+        return {
+            "character": character,
+            "prompt": prompt,
+            "usedReference": used_reference,
+            "asset": asset,
+            "candidates": candidates,
+        }
     finally:
         if not nested:
             progress.finish(character_id)
@@ -488,6 +658,9 @@ def generate_state(
         state = character_service.find_state(character, state_id)
         last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
         for direction in state.selectedDirections:
+            slot = character_service.find_slot(state, direction)
+            if slot.locked or slot.status in ("accepted", "locked"):
+                continue
             for frame_index in range(state.frameCount):
                 last = generate_direction(
                     character_id,
@@ -512,8 +685,10 @@ def generate_missing_directions(character_id: str, state_id: str, use_reference:
         last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
         for direction in state.selectedDirections:
             slot = character_service.find_slot(state, direction)
+            if slot.locked or slot.status in ("accepted", "locked"):
+                continue
             for frame_index in range(state.frameCount):
-                if frame_index < len(slot.frames) and slot.frames[frame_index].path:
+                if frame_index < len(slot.frames) and slot.frames[frame_index].path and slot.status not in ("rejected", "missing"):
                     continue
                 last = generate_direction(character_id, state_id, direction, frame_index, use_reference=use_reference)
         return last
@@ -686,8 +861,10 @@ def _save_direction_image(
     prompt: PromptLayers,
     seed: int | None,
     from_dir: Direction | None,
+    reference_asset_id: str = "",
+    strength: float | None = None,
 ):
-    sprite, preview, validation = process_generated(character, image)
+    sprite, preview, validation = process_generated(character, image, direction=direction)
     if not slot.frames:
         slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
     relative = f"states/{state.id}/{direction}/full_frame_00.png"
@@ -704,13 +881,18 @@ def _save_direction_image(
         source=image,
         negative=prompt.negative,
         from_direction=from_dir,
+        reference_direction=from_dir,
+        reference_asset_id=reference_asset_id,
+        strength=strength,
     )
-    if not slot.frames:
-        slot.frames.append(asset)
-    else:
-        slot.frames[0] = asset
-    slot.status = "pending"
-    slot.seed = seed
+    if slot.status not in ("accepted", "locked") and not slot.locked:
+        if not slot.frames:
+            slot.frames.append(asset)
+        else:
+            slot.frames[0] = asset
+        slot.status = "pending"
+        slot.seed = seed
+    slot.candidates = [asset]
     return asset
 
 
@@ -722,6 +904,7 @@ def generate_direction_set(
     override: str = "",
     strength: float = 0.38,
     job_id: str | None = None,
+    candidate_count: int | None = None,
 ) -> dict:
     character = character_service.get_character(character_id)
     if character.acceptedBase is None:
@@ -733,14 +916,15 @@ def generate_direction_set(
     character_service.ensure_slots(state, character.spriteSize)
     wanted = [direction for direction in EXPORT_DIRECTION_ORDER if direction in state.selectedDirections]
     prompt = build_prompt(character, state=state, override=override, from_direction="S")
-    last = {"character": character, "prompt": prompt, "usedReference": False, "asset": None}
+    last = {"character": character, "prompt": prompt, "usedReference": False, "asset": None, "candidates": []}
     native_images = native_direction_images(character, prompt, seed)
-    total = len([d for d in wanted if not character_service.find_slot(state, d).locked])
+    skippable = lambda slot: slot.locked or slot.status in ("accepted", "locked")
+    total = len([d for d in wanted if not skippable(character_service.find_slot(state, d))])
     done = 0
     if native_images:
         for direction in wanted:
             slot = character_service.find_slot(state, direction)
-            if slot.locked:
+            if skippable(slot):
                 continue
             image = native_images.get(direction)
             if image is None:
@@ -751,13 +935,15 @@ def generate_direction_set(
             asset = _save_direction_image(
                 character, state, slot, direction, image, prompt, seed, "S"
             )
-            last = {"character": character, "prompt": prompt, "usedReference": True, "asset": asset}
+            last = {"character": character, "prompt": prompt, "usedReference": True, "asset": asset, "candidates": slot.candidates}
         character_service.save_character(character)
         last["character"] = character
         return last
     for direction in wanted:
+        character = character_service.get_character(character_id)
+        state = character_service.find_state(character, state_id)
         slot = character_service.find_slot(state, direction)
-        if slot.locked:
+        if skippable(slot):
             continue
         done += 1
         if job_id:
@@ -769,9 +955,10 @@ def generate_direction_set(
             use_reference=use_reference,
             seed=None if seed is None else seed + done,
             override=override,
-            from_direction="S",
+            from_direction=None,
             strength=strength,
             job_id=job_id,
+            candidate_count=candidate_count,
         )
     return last
 
@@ -805,6 +992,30 @@ def set_direction_status(
     elif status == "unlocked":
         slot.locked = False
         slot.status = "pending" if slot.frames else "missing"
+    return character_service.save_character(character)
+
+
+def accept_candidate(character_id: str, state_id: str, direction: Direction, asset_id: str) -> CharacterProfile:
+    character = character_service.get_character(character_id)
+    state = character_service.find_state(character, state_id)
+    slot = character_service.find_slot(state, direction)
+    if slot.locked:
+        raise ValueError("Direction is locked")
+    chosen = next((item for item in slot.candidates if item.id == asset_id), None)
+    if chosen is None and slot.frames:
+        chosen = next((item for item in slot.frames if item.id == asset_id), None)
+    if chosen is None:
+        raise ValueError("Candidate not found")
+    chosen = chosen.model_copy(update={"accepted": True, "status": "accepted"})
+    if slot.frames:
+        slot.frames[0] = chosen
+    else:
+        slot.frames.append(chosen)
+    slot.status = "accepted"
+    slot.locked = False
+    slot.seed = chosen.seed
+    slot.candidates = [item for item in slot.candidates if item.id != asset_id]
+    memory.record(character, "accepted", chosen, state_name=state.name, direction=direction, provider_id=get_provider().info.id)
     return character_service.save_character(character)
 
 

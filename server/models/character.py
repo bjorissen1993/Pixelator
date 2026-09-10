@@ -73,8 +73,34 @@ class QualityWarning(BaseModel):
 
 class QualityValidation(BaseModel):
     ok: bool = True
+    score: int = 100
     warnings: list[QualityWarning] = Field(default_factory=list)
     futureChecks: list[str] = Field(default_factory=list)
+    occupancy: float = 0
+    heightRatio: float = 0
+    widthRatio: float = 0
+    centerX: float = 0
+    centerY: float = 0
+
+
+class GenerationDebug(BaseModel):
+    provider: str = ""
+    model: str = ""
+    lora: str = ""
+    loraLoaded: bool = False
+    seed: int | None = None
+    steps: int | None = None
+    guidance: float | None = None
+    strength: float | None = None
+    referenceDirection: Direction | None = None
+    referenceAssetId: str = ""
+    prompt: str = ""
+    negativePrompt: str = ""
+    workingResolution: int | None = None
+    targetResolution: int | None = None
+    paletteMode: str = ""
+    usedReference: bool = False
+    usedIpAdapter: bool = False
 
 
 class SpriteAsset(BaseModel):
@@ -95,11 +121,16 @@ class SpriteAsset(BaseModel):
     head: HeadAnchor | None = None
     providerId: str = ""
     fromDirection: Direction | None = None
+    referenceDirection: Direction | None = None
+    referenceAssetId: str = ""
+    strength: float | None = None
+    debug: GenerationDebug | None = None
 
 
 class DirectionSlot(BaseModel):
     direction: Direction
     frames: list[SpriteAsset] = Field(default_factory=list)
+    candidates: list[SpriteAsset] = Field(default_factory=list)
     body: SpriteAsset | None = None
     head: SpriteAsset | None = None
     overlays: list[SpriteAsset] = Field(default_factory=list)
@@ -182,3 +213,8 @@ class CharacterProfile(BaseModel):
     @classmethod
     def map_camera(cls, value: str) -> str:
         return {"front": "side"}.get(value, value)
+
+    @field_validator("paletteMode", mode="before")
+    @classmethod
+    def map_palette_mode(cls, value: str) -> str:
+        return {"locked": "strict"}.get(value, value)

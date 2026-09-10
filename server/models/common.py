@@ -57,8 +57,14 @@ class UpdateStateRequest(BaseModel):
 
 class ProviderCapabilities(BaseModel):
     supportsTextToImage: bool = True
-    supportsReferenceImage: bool = False
+    supportsImg2Img: bool = False
     supportsImageToImage: bool = False
+    supportsReferenceImage: bool = False
+    supportsNegativePrompt: bool = False
+    supportsLoRA: bool = False
+    supportsControlNet: bool = False
+    supportsIPAdapter: bool = False
+    supportsPaletteConditioning: bool = False
     supportsDirectionGeneration: bool = False
     supportsBatchDirections: bool = False
     supportsTargetPalette: bool = False
@@ -66,10 +72,10 @@ class ProviderCapabilities(BaseModel):
     supportsInpainting: bool = False
     supportsAnimation: bool = False
     supportsSkeletonGuidance: bool = False
-    supportsNegativePrompt: bool = False
     nativePixelOutput: bool = False
-    preferredSizes: list[int] = Field(default_factory=lambda: [256])
-    preferredSize: int = 256
+    preferredSizes: list[int] = Field(default_factory=lambda: [64, 96, 128, 256, 512])
+    preferredSize: int = 128
+    workingSize: int = 128
     batchIsSequential: bool = True
 
 
@@ -81,3 +87,12 @@ class ProviderInfo(BaseModel):
     nativePixelOutput: bool
     notes: str
     capabilities: ProviderCapabilities = Field(default_factory=ProviderCapabilities)
+    loraPath: str = ""
+    loraLoaded: bool = False
+    loraStrength: float = 0
+    controlnetLoaded: bool = False
+    ipAdapterLoaded: bool = False
+    fallbackTurbo: bool = False
+    device: str = ""
+    dtype: str = ""
+    workingSize: int = 128
