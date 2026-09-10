@@ -33,15 +33,13 @@ def _ctx(**kwargs):
 @router.post("/api/characters/{character_id}/generate/base")
 def generate_base(character_id: str, payload: GenerateBaseRequest = Body(default_factory=GenerateBaseRequest)):
     try:
-        if get_provider().capabilities.nativePixelOutput:
-            return generation_service.start_job(
-                character_id,
-                "base",
-                "Generate",
-                1,
-                lambda job_id: generation_service.generate_base(character_id, payload.seed, payload.override),
-            )
-        return generation_service.generate_base(character_id, payload.seed, payload.override)
+        return generation_service.start_job(
+            character_id,
+            "base",
+            "Generating South",
+            1,
+            lambda job_id: generation_service.generate_base(character_id, payload.seed, payload.override),
+        )
     except Exception as exc:
         http_error(exc, context=_ctx(characterId=character_id, action="generate_base", direction="S", state="idle"))
 
@@ -119,10 +117,18 @@ def generate_direction_set(character_id: str, payload: GenerateDirectionSetReque
         return generation_service.start_job(
             character_id,
             "directions",
-            "Generate All Directions",
+            "Generating rotations",
             8,
             lambda job_id: generation_service.generate_direction_set(
-                character_id, payload.stateId, payload.useReference, payload.seed, payload.override, payload.strength, job_id, payload.candidateCount
+                character_id,
+                payload.stateId,
+                payload.useReference,
+                payload.seed,
+                payload.override,
+                payload.strength,
+                job_id,
+                payload.candidateCount,
+                payload.rotationStrategy,
             ),
         )
     except Exception as exc:
@@ -151,6 +157,14 @@ def accept_direction(character_id: str, payload: DirectionStatusRequest):
         return generation_service.set_direction_status(character_id, payload.stateId, payload.direction, "accepted")
     except Exception as exc:
         http_error(exc, context=_ctx(characterId=character_id, action="accept_direction", direction=payload.direction, state=payload.stateId))
+
+
+@router.post("/api/characters/{character_id}/directions/use-as-reference")
+def use_as_reference(character_id: str, payload: DirectionStatusRequest):
+    try:
+        return generation_service.use_as_reference(character_id, payload.stateId, payload.direction)
+    except Exception as exc:
+        http_error(exc, context=_ctx(characterId=character_id, action="use_as_reference", direction=payload.direction, state=payload.stateId))
 
 
 @router.post("/api/characters/{character_id}/directions/reject")

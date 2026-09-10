@@ -152,6 +152,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ stateId, direction }),
     }),
+  useAsReference: (id: string, stateId: string, direction: Direction) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/use-as-reference`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction }),
+    }),
   rejectDirection: (id: string, stateId: string, direction: Direction, reason?: string, customReason?: string) =>
     request<CharacterProfile>(`/api/characters/${id}/directions/reject`, {
       method: "POST",

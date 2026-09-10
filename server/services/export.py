@@ -206,7 +206,10 @@ def export_training_dataset(character_id: str) -> Path:
                 "direction": direction,
                 "state": state_name,
                 "seed": asset.seed,
+                "style": character.styleProfileId or character.outline,
                 "styleProfileId": character.styleProfileId,
+                "palette": list(character.palette.colors),
+                "paletteMode": character.paletteMode,
             }
         )
         index += 1

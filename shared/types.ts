@@ -67,6 +67,9 @@ export interface CompositionSettings {
   preventCloseup: boolean;
   centerCharacter: boolean;
   fitSafeMargins: boolean;
+  characterScale?: number;
+  safeMargin?: number;
+  transparentBackground?: boolean;
   oneCharacterOnly: boolean;
   showFullSpiritBody: boolean;
   showFullSpiritTail: boolean;
@@ -161,6 +164,10 @@ export interface GenerationDebug {
   artifactDetected?: boolean;
   compositionFailed?: boolean;
   directionScore?: number | null;
+  referenceState?: string;
+  referenceFile?: string;
+  view?: string;
+  rotationStrategy?: string;
 }
 
 export interface SpriteAsset {
@@ -183,6 +190,8 @@ export interface SpriteAsset {
   fromDirection?: Direction | null;
   referenceDirection?: Direction | null;
   referenceAssetId?: string;
+  referenceState?: string;
+  referenceFile?: string;
   strength?: number | null;
   debug?: GenerationDebug | null;
 }
@@ -254,6 +263,7 @@ export interface CharacterProfile {
   camera: CameraAngle;
   palette: PaletteSettings;
   paletteMode: PaletteMode;
+  rotationStrategy?: "stable" | "incremental";
   outline: OutlineStyle;
   shading: ShadingStyle;
   detail: DetailLevel;
@@ -301,6 +311,18 @@ export interface StateTemplate {
 }
 
 export interface ProviderCapabilities {
+  textToSprite?: boolean;
+  imageToSprite?: boolean;
+  rotateSprite?: boolean;
+  generate8Directions?: boolean;
+  generateState?: boolean;
+  generateAnimation?: boolean;
+  initImage?: boolean;
+  inpainting?: boolean;
+  paletteConditioning?: boolean;
+  negativePrompt?: boolean;
+  seed?: boolean;
+  poseConditioning?: boolean;
   supportsTextToImage: boolean;
   supportsImg2Img?: boolean;
   supportsImageToImage: boolean;

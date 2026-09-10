@@ -4,25 +4,62 @@ import config
 from providers.base import GenerationProvider
 from providers.diffusers_provider import DiffusersProvider
 from providers.pixellab_provider import PixelLabProvider
+from providers.unconfigured import UnconfiguredProvider
 
 
-def _local_provider() -> DiffusersProvider:
-    model_id = config.PIXEL_MODEL_ID or config.MODEL_ID
-    native = bool(config.PIXEL_MODEL_ID) and "turbo" not in model_id.lower()
-    return DiffusersProvider(model_id=model_id, native=native)
+def _pixel_provider(model_id: str) -> DiffusersProvider:
+    return DiffusersProvider(model_id=model_id, native=not config.is_turbo_model(model_id))
+
+
+def _turbo_fallback() -> DiffusersProvider:
+    return DiffusersProvider(model_id=config.TURBO_MODEL_ID, native=False)
+
+
+def _unconfigured(reason: str) -> UnconfiguredProvider:
+    return UnconfiguredProvider(reason)
 
 
 @lru_cache(maxsize=1)
 def get_provider() -> GenerationProvider:
     choice = config.PIXELATOR_PROVIDER
+    model = config.PIXELATOR_MODEL_ID
+    key = config.PIXELLAB_API_KEY
+
     if choice == "pixellab":
-        if config.PIXELLAB_API_KEY:
+        if key:
             return PixelLabProvider()
-        return _local_provider()
-    if choice in ("diffusers", "diffusers-local"):
-        return DiffusersProvider(model_id=config.MODEL_ID, native=False)
-    if choice in ("pixel-diffusers", "pixel"):
-        return DiffusersProvider(model_id=config.PIXEL_MODEL_ID or config.MODEL_ID, native=True)
-    if config.PIXELLAB_API_KEY:
-        return PixelLabProvider()
-    return _local_provider()
+        return _unconfigured("PIXELATOR_PROVIDER=pixellab but PIXELLAB_API_KEY is empty.")
+
+    if choice in {"fallback", "turbo", "sdxl-turbo"}:
+        if config.PIXELATOR_ALLOW_TURBO_FALLBACK or choice in {"fallback", "turbo", "sdxl-turbo"}:
+            return _turbo_fallback()
+        return _unconfigured("SDXL-Turbo fallback is disabled. Set PIXELATOR_ALLOW_TURBO_FALLBACK=true.")
+
+    if choice in {"diffusers", "diffusers-local", "pixel", "pixel-diffusers", "local"}:
+        if not model:
+            return _unconfigured("PIXELATOR_MODEL_ID is empty. Point it at a local pixel-art checkpoint.")
+        if config.is_turbo_model(model) and not config.PIXELATOR_ALLOW_TURBO_FALLBACK:
+            return _unconfigured(
+                "PIXELATOR_MODEL_ID is SDXL-Turbo, which is not the default engine. "
+                "Set a pixel checkpoint or PIXELATOR_ALLOW_TURBO_FALLBACK=true."
+            )
+        return _pixel_provider(model)
+
+    if choice in {"auto", ""}:
+        if key:
+            return PixelLabProvider()
+        if model and not config.is_turbo_model(model):
+            return _pixel_provider(model)
+        if model and config.is_turbo_model(model) and config.PIXELATOR_ALLOW_TURBO_FALLBACK:
+            return _turbo_fallback()
+        if model and config.is_turbo_model(model):
+            return _unconfigured(
+                "The configured MODEL_ID is SDXL-Turbo. Pixelator no longer uses that as the default engine. "
+                "Set PIXELATOR_MODEL_ID to a pixel-art checkpoint, PIXELLAB_API_KEY, or PIXELATOR_ALLOW_TURBO_FALLBACK=true."
+            )
+        return _unconfigured(
+            "No pixel-art provider is configured. Set PIXELATOR_MODEL_ID, PIXELLAB_API_KEY, "
+            "or PIXELATOR_ALLOW_TURBO_FALLBACK=true for the optional Turbo fallback."
+        )
+
+    return _unconfigured(f"Unknown PIXELATOR_PROVIDER={choice!r}")

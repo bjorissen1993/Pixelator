@@ -50,7 +50,8 @@ class GenerateDirectionSetRequest(BaseModel):
     seed: int | None = None
     override: str = ""
     strength: float = 0.38
-    candidateCount: int = Field(default=3, ge=1, le=4)
+    candidateCount: int = Field(default=2, ge=1, le=4)
+    rotationStrategy: str | None = None
 
 
 class GenerateAnimationRequest(BaseModel):
@@ -83,7 +84,7 @@ class MasterPromptRequest(BaseModel):
 
 class AcceptBaseRequest(BaseModel):
     lockPalette: bool = True
-    paletteMode: str = "soft"
+    paletteMode: str = "accepted"
 
 
 class AcceptCandidateRequest(BaseModel):

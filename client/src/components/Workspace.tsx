@@ -79,13 +79,24 @@ export function Workspace() {
           <div>
             <h2>{character?.name ?? "No character"}</h2>
             <p>
-              Provider {provider?.name ?? "unknown"} · {provider?.modelId}
-              {provider?.fallbackTurbo ? " · fallback Turbo" : provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · pixelize pipeline"}
-              {provider?.loraLoaded ? " · LoRA loaded" : provider?.loraPath ? " · LoRA failed" : " · no LoRA"}
-              {provider?.capabilities?.supportsImg2Img || provider?.capabilities?.supportsReferenceImage ? " · reference img2img" : " · no img2img"}
+              Provider {provider?.name ?? "unconfigured"} · {provider?.modelId || "no model"}
+              {provider?.id === "unconfigured"
+                ? " · configure PIXELATOR_MODEL_ID or PIXELLAB_API_KEY"
+                : provider?.fallbackTurbo
+                  ? " · optional Turbo fallback"
+                  : provider?.capabilities?.rotateSprite
+                    ? " · reference-conditioned rotation"
+                    : " · no rotateSprite"}
+              {provider?.capabilities?.generate8Directions
+                ? provider?.capabilities?.batchIsSequential
+                  ? " · 8-dir sequential"
+                  : " · 8-dir native batch"
+                : ""}
+              {provider?.loraLoaded ? " · LoRA loaded" : provider?.loraPath ? " · LoRA configured" : ""}
               {provider?.ipAdapterLoaded ? " · IP-Adapter" : ""}
-              {` · work ${provider?.workingSize ?? provider?.capabilities?.workingSize ?? "?"}px`}
+              {` · sprite ${character?.spriteSize ?? 48}px`}
               {character?.acceptedBase ? ` · palette ${character.paletteMode}` : ""}
+              {character?.rotationStrategy ? ` · ${character.rotationStrategy} rotation` : ""}
               {character?.acceptedBase ? " · base locked" : ""}
             </p>
           </div>

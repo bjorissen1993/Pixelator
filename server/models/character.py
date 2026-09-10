@@ -48,6 +48,9 @@ class CompositionSettings(BaseModel):
     preventCloseup: bool = True
     centerCharacter: bool = True
     fitSafeMargins: bool = True
+    characterScale: float = 0.78
+    safeMargin: float = 0.10
+    transparentBackground: bool = True
     oneCharacterOnly: bool = True
     showFullSpiritBody: bool = True
     showFullSpiritTail: bool = True
@@ -153,6 +156,10 @@ class GenerationDebug(BaseModel):
     artifactDetected: bool = False
     compositionFailed: bool = False
     directionScore: int | None = None
+    referenceState: str = ""
+    referenceFile: str = ""
+    view: str = ""
+    rotationStrategy: str = ""
 
 
 class SpriteAsset(BaseModel):
@@ -175,6 +182,8 @@ class SpriteAsset(BaseModel):
     fromDirection: Direction | None = None
     referenceDirection: Direction | None = None
     referenceAssetId: str = ""
+    referenceState: str = ""
+    referenceFile: str = ""
     strength: float | None = None
     debug: GenerationDebug | None = None
 
@@ -231,10 +240,11 @@ class CharacterProfile(BaseModel):
     bodyTemplate: BodyTemplate = "custom"
     species: str = "human"
     spirit: SpiritSettings = Field(default_factory=SpiritSettings)
-    spriteSize: int = Field(default=48, ge=16, le=128)
+    spriteSize: int = Field(default=48, ge=32, le=128)
     camera: CameraAngle = "high-top-down"
     palette: PaletteSettings = Field(default_factory=PaletteSettings)
     paletteMode: PaletteMode = "generated"
+    rotationStrategy: str = "stable"
     outline: OutlineStyle = "selective"
     shading: ShadingStyle = "basic"
     detail: DetailLevel = "medium"
@@ -251,6 +261,15 @@ class CharacterProfile(BaseModel):
     acceptedBase: AcceptedBase | None = None
     createdAt: str
     updatedAt: str
+
+    @field_validator("spriteSize", mode="before")
+    @classmethod
+    def clamp_sprite_size(cls, value):
+        from config import clamp_sprite_size
+        try:
+            return clamp_sprite_size(int(value or 48), 48)
+        except (TypeError, ValueError):
+            return 48
 
     @field_validator("outline", mode="before")
     @classmethod
@@ -270,4 +289,4 @@ class CharacterProfile(BaseModel):
     @field_validator("paletteMode", mode="before")
     @classmethod
     def map_palette_mode(cls, value: str) -> str:
-        return {"locked": "strict"}.get(value, value)
+        return {"locked": "strict", "accepted": "accepted"}.get(value, value)

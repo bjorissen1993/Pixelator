@@ -205,7 +205,7 @@ export function SpritePreviewCard({
           <div className="sprite-loading" aria-live="polite">
             <Spinner />
             <strong>{progress?.label || "Generating…"}</strong>
-            <span>{progress?.step || "generating source image"}</span>
+            <span>{progress?.step || "Generating sprite"}</span>
             <PipelineSteps progress={progress} />
           </div>
         ) : null}

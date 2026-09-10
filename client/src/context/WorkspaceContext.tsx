@@ -123,11 +123,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         label,
         step: "queued",
         steps: [
-          "generating source image",
-          "removing background",
-          "cropping sprite",
-          "reducing palette",
-          "saving preview",
+          "queued",
+          "Generating South",
+          "Generating rotations",
+          "Applying palette",
+          "Saving assets",
         ],
         stepIndex: 0,
       });

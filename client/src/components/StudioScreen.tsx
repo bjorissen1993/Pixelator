@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { EXPORT_DIRECTION_ORDER, FRAME_COUNTS, REJECTION_REASONS } from "@shared";
+import { useEffect, useState } from "react";
+import { EXPORT_DIRECTION_ORDER, FRAME_COUNTS, REJECTION_REASONS, ROTATION_STRATEGIES } from "@shared";
 import type { Direction, DirectionSlot, RejectionReason, SpriteAsset } from "@shared";
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -93,6 +93,13 @@ export function StudioScreen() {
     templates,
   } = useWorkspace();
   const [rejectReason, setRejectReason] = useState<RejectionReason>("wrong_direction");
+  const [refineStrength, setRefineStrength] = useState(0.35);
+  const [rotationStrategy, setRotationStrategy] = useState<"stable" | "incremental">(
+    character?.rotationStrategy === "incremental" ? "incremental" : "stable",
+  );
+  useEffect(() => {
+    setRotationStrategy(character?.rotationStrategy === "incremental" ? "incremental" : "stable");
+  }, [character?.id, character?.rotationStrategy]);
   if (!character) return null;
   const state = character.states.find((item) => item.id === selectedStateId) ?? character.states[0];
   const locked = generating || !!busy;
@@ -106,7 +113,11 @@ export function StudioScreen() {
   const generateEight = () => {
     if (!state) return;
     run("Generate All Directions", async () => {
-      const started = await api.generateDirectionSet(character.id, { stateId: state.id, useReference: true });
+      const started = await api.generateDirectionSet(character.id, {
+        stateId: state.id,
+        useReference: true,
+        rotationStrategy,
+      });
       return started;
     });
   };
@@ -244,21 +255,43 @@ export function StudioScreen() {
           <header className="block-head">
             <h2>{state ? `${state.name} directions` : "Directions"}</h2>
           </header>
-          <p className="hint">
-            Center is the selected direction preview. Accepted Base stays the identity reference above.
-            Generate creates South (S). Generate All Directions validates South first and only continues when that sprite is usable.
+            <p className="hint">
+            Center is the selected direction preview. If the selected slot is empty, Accepted Base is shown there.
+            Generate creates one South idle sprite. Generate All Directions rotates from that reference.
+            Stable identity reuses South for every facing. Incremental rotation walks 45° and can accumulate error.
             Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
           </p>
+          <label className="field">
+            <span>Rotation strategy</span>
+            <Select
+              value={rotationStrategy}
+              onChange={(event) => {
+                const next = event.target.value as "stable" | "incremental";
+                setRotationStrategy(next);
+                run("Saving rotation strategy", () => api.patchCharacter(character.id, { rotationStrategy: next }).then(setCharacter), {
+                  generating: false,
+                });
+              }}
+            >
+              {ROTATION_STRATEGIES.map((strategy) => (
+                <option key={strategy} value={strategy}>
+                  {strategy === "stable" ? "Stable identity (from South)" : "Incremental rotation (45° steps)"}
+                </option>
+              ))}
+            </Select>
+          </label>
           <div className="compass studio-compass">
             {GRID.map((cell) => {
               if (cell === "REF") {
                 const selectedStatus = slotStatus(selectedSlot);
-                const selectedAsset = selectedSlot?.frames[0] ?? (selectedDirection === "S" ? refAsset : undefined);
+                const hasSelected = Boolean(selectedSlot?.frames[0]);
+                const selectedAsset = selectedSlot?.frames[0] ?? character.acceptedBase?.sprite ?? (selectedDirection === "S" ? refAsset : undefined);
+                const showingBase = !hasSelected && Boolean(character.acceptedBase?.sprite);
                 return (
                   <div key="selected" className={`compass-core selected-preview status-${selectedStatus}`}>
                     <span className="selected-label">
-                      Selected · {selectedDirection}
-                      <span className={`status-badge status-${selectedStatus}`}>{selectedStatus}</span>
+                      {showingBase ? "Accepted Base" : `Selected · ${selectedDirection}`}
+                      <span className={`status-badge status-${selectedStatus}`}>{showingBase ? "reference" : selectedStatus}</span>
                     </span>
                     <PixelImage
                       asset={selectedAsset}
@@ -442,13 +475,29 @@ export function StudioScreen() {
                   variant="secondary"
                   disabled={locked || !selectedSlot.frames[0]}
                   onClick={() =>
+                    run("Using as reference", () => api.useAsReference(character.id, state.id, selectedDirection).then(setCharacter), {
+                      generating: false,
+                    })
+                  }
+                >
+                  Use as Reference
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={locked || !selectedSlot.frames[0]}
+                  onClick={() =>
                     run("Refining from this sprite", async () => {
-                      const result = await api.refine(character.id, { stateId: state.id, direction: selectedDirection, useAsReference: true });
+                      const result = await api.refine(character.id, {
+                        stateId: state.id,
+                        direction: selectedDirection,
+                        useAsReference: true,
+                        strength: refineStrength,
+                      });
                       if (result) applyResult(result);
                     })
                   }
                 >
-                  Use as reference
+                  Refine
                 </Button>
                 <Button
                   variant="remove"
@@ -458,6 +507,17 @@ export function StudioScreen() {
                   Remove
                 </Button>
               </div>
+              <label className="field">
+                <span>Init strength {refineStrength.toFixed(2)}</span>
+                <input
+                  type="range"
+                  min={0.08}
+                  max={0.85}
+                  step={0.01}
+                  value={refineStrength}
+                  onChange={(event) => setRefineStrength(Number(event.target.value))}
+                />
+              </label>
               <label className="field">
                 <span>Reject reason</span>
                 <Select

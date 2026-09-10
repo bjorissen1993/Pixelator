@@ -28,8 +28,13 @@ def composition_constraints(character: CharacterProfile, stronger: bool = False)
         parts.append("entire silhouette visible, nothing cut off by the frame")
     if comp.centerCharacter:
         parts.append("centered on canvas")
+    if getattr(comp, "transparentBackground", True):
+        parts.append("transparent background, no scenery")
     if comp.fitSafeMargins:
         parts.append("fits fully inside the frame with visible padding")
+    scale = getattr(comp, "characterScale", 0) or 0
+    if scale:
+        parts.append(f"character occupies about {int(scale * 100)} percent of the canvas")
     if comp.preventCropping:
         parts.append("no cropping")
     if comp.preventPortrait or comp.noPortraitCloseup:
@@ -39,6 +44,7 @@ def composition_constraints(character: CharacterProfile, stronger: bool = False)
     if comp.oneCharacterOnly:
         parts.append("one character only")
     if character.spirit.enabled or character.spirit.noLegs:
+        parts.append("no legs, no boots, spectral lower body")
         if comp.showFullSpiritBody or comp.showFullSpiritTail:
             parts.append("full lower spirit body visible, full floating spirit tail in frame")
     if stronger:

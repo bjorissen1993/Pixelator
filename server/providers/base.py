@@ -45,6 +45,74 @@ class GenerationProvider(ABC):
     def create_character_pack(self, *args, **kwargs):
         return None
 
+    def generate_south(
+        self,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        size: int = 48,
+        view: str = "",
+    ) -> GeneratedImage:
+        return self.generate_base_character(prompt, seed)
+
+    def rotate_sprite(
+        self,
+        reference: Image.Image,
+        from_direction: Direction,
+        to_direction: Direction,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        from_view: str = "",
+        to_view: str = "",
+        strength: float = 0.36,
+        size: int = 48,
+        guidance: float | None = None,
+        palette: list[tuple[int, int, int]] | None = None,
+    ) -> GeneratedImage:
+        if reference is None:
+            raise ValueError("rotateSprite requires a real reference image")
+        return self.generate_from_reference(prompt, reference, seed=seed, strength=strength, init_image=reference)
+
+    def generate_8_directions(
+        self,
+        reference_south: Image.Image,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        view: str = "",
+        size: int = 48,
+        palette: list[tuple[int, int, int]] | None = None,
+        strategy: str = "stable",
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> dict[Direction, GeneratedImage]:
+        from domain.rotation import EXPORT_ORDER, rotation_jobs
+
+        if reference_south is None:
+            raise ValueError("generate8Directions requires a South reference image")
+        results: dict[Direction, GeneratedImage] = {}
+        south = GeneratedImage(reference_south, seed, prompt)
+        south.debug.usedReference = True
+        south.debug.targetDirection = "S"
+        results["S"] = south
+        jobs = rotation_jobs(strategy, list(EXPORT_ORDER))
+        total = len(jobs)
+        for index, (source_dir, target) in enumerate(jobs, start=1):
+            source = results.get(source_dir, south).image
+            results[target] = self.rotate_sprite(
+                source,
+                source_dir,
+                target,
+                prompt,
+                seed=None if seed is None else seed + index,
+                from_view=view,
+                to_view=view,
+                size=size,
+                palette=palette,
+            )
+            results[target].debug.rotationStrategy = strategy
+            results[target].debug.view = view
+            if on_progress:
+                on_progress(index, total, f"Generating rotations {index}/{total} ({target})")
+        return results
+
     @abstractmethod
     def generate_base_character(self, prompt: PromptLayers, seed: int | None = None) -> GeneratedImage:
         raise NotImplementedError

@@ -15,6 +15,9 @@ const COMPOSITION_DEFAULTS: CompositionSettings = {
   preventCloseup: true,
   centerCharacter: true,
   fitSafeMargins: true,
+  characterScale: 0.78,
+  safeMargin: 0.1,
+  transparentBackground: true,
   oneCharacterOnly: true,
   showFullSpiritBody: true,
   showFullSpiritTail: true,
@@ -28,8 +31,9 @@ const COMPOSITION_LABELS: Array<[keyof CompositionSettings, string]> = [
   ["preventPortrait", "Prevent portrait composition"],
   ["preventCloseup", "Prevent close-up"],
   ["centerCharacter", "Center character on canvas"],
-  ["fitSafeMargins", "Fit within safe margins"],
-  ["oneCharacterOnly", "One character only"],
+  ["fitSafeMargins", "Safe margin"],
+  ["transparentBackground", "Transparent background"],
+  ["oneCharacterOnly", "One subject only"],
   ["showFullSpiritBody", "For spirit characters: show full lower spirit body"],
   ["showFullSpiritTail", "For spirit characters: show full spirit tail"],
 ];
@@ -89,6 +93,7 @@ export function CharacterScreen() {
         paletteMode: draft.paletteMode,
         bodyTemplate: draft.bodyTemplate,
         composition: draft.composition,
+        rotationStrategy: draft.rotationStrategy,
       });
       setCharacter(saved);
     });
@@ -195,7 +200,7 @@ export function CharacterScreen() {
             <Toggle
               key={key}
               label={label}
-              checked={draft.composition?.[key] ?? true}
+              checked={Boolean(draft.composition?.[key] ?? true)}
               onChange={(value) => {
                 const composition = { ...COMPOSITION_DEFAULTS, ...draft.composition, [key]: value };
                 if (key === "preventPortrait" || key === "preventCloseup") {
@@ -205,6 +210,38 @@ export function CharacterScreen() {
               }}
             />
           ))}
+        </div>
+        <div className="form-grid">
+          <Field label="Character scale">
+            <TextInput
+              type="number"
+              min={0.4}
+              max={1}
+              step={0.02}
+              value={draft.composition.characterScale ?? 0.78}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  composition: { ...COMPOSITION_DEFAULTS, ...draft.composition, characterScale: Number(event.target.value) },
+                })
+              }
+            />
+          </Field>
+          <Field label="Safe margin">
+            <TextInput
+              type="number"
+              min={0}
+              max={0.3}
+              step={0.01}
+              value={draft.composition.safeMargin ?? 0.1}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  composition: { ...COMPOSITION_DEFAULTS, ...draft.composition, safeMargin: Number(event.target.value) },
+                })
+              }
+            />
+          </Field>
         </div>
       </Section>
 
@@ -251,13 +288,22 @@ export function CharacterScreen() {
           </Field>
           <Field label="Palette mode">
             <Select value={draft.paletteMode ?? "generated"} onChange={(event) => set("paletteMode", event.target.value as CharacterProfile["paletteMode"])}>
+              <option value="generated">Generated</option>
+              <option value="accepted">Accepted Base Palette</option>
+              <option value="project">Project Palette</option>
+              <option value="custom">Custom Palette</option>
+              <option value="soft">Soft lock</option>
+              <option value="strict">Strict lock</option>
               <option value="unlocked">Unlocked</option>
-              <option value="soft">Soft palette lock</option>
-              <option value="strict">Strict palette lock</option>
-              <option value="generated">Generated (unlocked)</option>
-              <option value="project">Project palette</option>
-              <option value="custom">Custom palette</option>
-              <option value="locked">Locked (strict)</option>
+            </Select>
+          </Field>
+          <Field label="Rotation strategy">
+            <Select
+              value={draft.rotationStrategy ?? "stable"}
+              onChange={(event) => set("rotationStrategy", event.target.value as CharacterProfile["rotationStrategy"])}
+            >
+              <option value="stable">Stable identity (every facing from South)</option>
+              <option value="incremental">Incremental rotation (45° steps)</option>
             </Select>
           </Field>
           <Field label="Palette colors">

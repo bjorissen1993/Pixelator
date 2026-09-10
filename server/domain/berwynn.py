@@ -81,7 +81,7 @@ def berwynn_profile() -> CharacterProfile:
             notes="no legs, no boots, lower body fades from waist into spectral mist, floating spirit tail, pale blue subtle ghost aura, not evil or undead-looking",
         ),
         spriteSize=sprite_size,
-        camera="high-top-down",
+        camera="low-top-down",
         palette=PaletteSettings(colorCount=20, locked=False, colors=[]),
         outline="black",
         shading="basic",

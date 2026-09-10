@@ -37,21 +37,19 @@ class DiffusersProvider(GenerationProvider):
 
     def __init__(self, model_id: str | None = None, native: bool = False):
         self.torch = None
-        self.device = config.DEVICE
-        self.dtype_name = config.DTYPE or ("float16" if config.DEVICE == "cuda" else "float32")
+        self.device = config.PIXELATOR_DEVICE
+        self.dtype_name = config.PIXELATOR_DTYPE or ("float16" if config.PIXELATOR_DEVICE == "cuda" else "float32")
         self.txt2img = None
         self.img2img = None
-        self.model_id = (model_id or config.PIXEL_MODEL_ID or config.MODEL_ID).strip()
-        self.native = native and not _is_turbo(self.model_id)
-        self.working_size = max(32, min(512, config.WORKING_SIZE))
+        self.model_id = (model_id or config.PIXELATOR_MODEL_ID).strip()
         self.fallback_turbo = _is_turbo(self.model_id)
-        # Turbo is not a native pixel checkpoint; keep its trained 512 canvas, then pixel-aware downsample.
+        self.native = bool(native) and not self.fallback_turbo
+        self.working_size = config.clamp_sprite_size(config.WORKING_SIZE, 48)
+        # Fallback Turbo is the only path that still uses a 512 photographic canvas.
         self.size = 512 if self.fallback_turbo else self.working_size
-        if config.WORKING_SIZE == 48:
-            self.size = 48
-        self.steps = config.INFERENCE_STEPS if not self.native else max(config.INFERENCE_STEPS, 8)
-        self.guidance = config.GUIDANCE_SCALE if not self.native else max(config.GUIDANCE_SCALE, 1.0)
-        self.lora_path = config.LORA_PATH
+        self.steps = 4 if self.fallback_turbo else max(config.INFERENCE_STEPS, 8)
+        self.guidance = 0.0 if self.fallback_turbo else max(config.GUIDANCE_SCALE, 1.0)
+        self.lora_path = config.PIXELATOR_LORA
         self.lora_strength = config.LORA_STRENGTH
         self.lora_loaded = False
         self.lora_error = ""
@@ -69,7 +67,7 @@ class DiffusersProvider(GenerationProvider):
             raise RuntimeError(f"Could not import Diffusers backend: {exc}") from exc
 
         self.torch = torch
-        requested = config.DEVICE
+        requested = config.PIXELATOR_DEVICE
         self.device = requested if requested == "cpu" or torch.cuda.is_available() else "cpu"
         dtype = _resolve_dtype(torch, self.device)
         self.dtype_name = str(dtype).replace("torch.", "")
@@ -134,26 +132,39 @@ class DiffusersProvider(GenerationProvider):
 
     @property
     def info(self) -> ProviderInfo:
+        rotate = self.img2img_ready or self.txt2img is None
         caps = ProviderCapabilities(
+            textToSprite=True,
+            imageToSprite=rotate,
+            rotateSprite=rotate,
+            generate8Directions=rotate,
+            generateState=rotate,
+            generateAnimation=rotate,
+            initImage=rotate,
+            inpainting=False,
+            paletteConditioning=False,
+            negativePrompt=self.guidance > 0,
+            seed=True,
+            poseConditioning=self.controlnet_loaded,
             supportsTextToImage=True,
-            supportsImg2Img=self.img2img_ready or self.txt2img is None,
-            supportsImageToImage=self.img2img_ready or self.txt2img is None,
-            supportsReferenceImage=True,
-            supportsNegativePrompt=self.guidance > 0 or True,
+            supportsImg2Img=rotate,
+            supportsImageToImage=rotate,
+            supportsReferenceImage=rotate,
+            supportsNegativePrompt=self.guidance > 0,
             supportsLoRA=bool(self.lora_path),
             supportsControlNet=self.controlnet_loaded,
             supportsIPAdapter=self.ip_adapter_loaded,
             supportsPaletteConditioning=False,
-            supportsDirectionGeneration=True,
+            supportsDirectionGeneration=rotate,
             supportsBatchDirections=True,
             supportsTargetPalette=False,
-            supportsInitImage=True,
+            supportsInitImage=rotate,
             supportsInpainting=False,
-            supportsAnimation=True,
+            supportsAnimation=rotate,
             supportsSkeletonGuidance=False,
             nativePixelOutput=self.native and not self.fallback_turbo,
-            preferredSizes=[48, 64, 96, 128, 256, 512],
-            preferredSize=self.size,
+            preferredSizes=[32, 48, 64, 96, 128],
+            preferredSize=self.working_size,
             workingSize=self.working_size,
             batchIsSequential=True,
         )
@@ -284,6 +295,47 @@ class DiffusersProvider(GenerationProvider):
         generated.used_reference = True
         generated.strength = strength
         return generated
+
+    def generate_south(self, prompt: PromptLayers, seed: int | None = None, size: int = 48, view: str = "") -> GeneratedImage:
+        previous = self.size
+        if not self.fallback_turbo:
+            self.size = max(32, min(128, size))
+        try:
+            generated = self._txt(prompt, seed)
+            generated.debug.view = view
+            generated.debug.targetDirection = "S"
+            return generated
+        finally:
+            self.size = previous
+
+    def rotate_sprite(
+        self,
+        reference: Image.Image,
+        from_direction,
+        to_direction,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        from_view: str = "",
+        to_view: str = "",
+        strength: float = 0.36,
+        size: int = 48,
+        guidance: float | None = None,
+        palette=None,
+    ) -> GeneratedImage:
+        if reference is None:
+            raise ValueError("rotateSprite requires a real reference image")
+        previous = self.size
+        if not self.fallback_turbo:
+            self.size = max(32, min(128, size))
+        try:
+            generated = self._img(prompt, reference, seed, strength, init_image=reference)
+            generated.debug.referenceDirection = from_direction
+            generated.debug.targetDirection = to_direction
+            generated.debug.view = to_view or from_view
+            generated.debug.usedReference = True
+            return generated
+        finally:
+            self.size = previous
 
     def generate_base_character(self, prompt: PromptLayers, seed: int | None = None) -> GeneratedImage:
         return self._txt(prompt, seed)

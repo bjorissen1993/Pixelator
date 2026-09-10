@@ -1,11 +1,10 @@
 import threading
 
 PIPELINE_STEPS = [
-    "generating source image",
-    "removing background",
-    "cropping sprite",
-    "reducing palette",
-    "saving preview",
+    "Generating South",
+    "Generating rotations",
+    "Applying palette",
+    "Saving assets",
 ]
 
 _lock = threading.Lock()

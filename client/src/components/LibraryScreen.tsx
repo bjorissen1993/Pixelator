@@ -25,13 +25,11 @@ export function LibraryScreen() {
     <div className="stack">
       <Section title="Image provider">
         <p className="hint">
-          PixelLab quality comes from PixelLab's own model. Paste an API token from{" "}
-          <a href="https://pixellab.ai/account" target="_blank" rel="noreferrer">
-            pixellab.ai/account
-          </a>{" "}
-          into <code>server/.env</code> as <code>PIXELLAB_API_KEY</code>, then restart the backend. Without that key,
-          Pixelator stays on the configured local Diffusers model (SDXL-Turbo if you have not set a pixel checkpoint).
-          Optional: <code>PIXELATOR_PROVIDER</code>, <code>MODEL_ID</code>, <code>LORA_PATH</code>, <code>WORKING_SIZE</code>.
+          Configure a pixel-art provider in <code>server/.env</code>, then restart the backend.{" "}
+          <code>PIXELATOR_PROVIDER=auto</code> uses PixelLab when <code>PIXELLAB_API_KEY</code> is set, otherwise a
+          local checkpoint from <code>PIXELATOR_MODEL_ID</code>. SDXL-Turbo is not the default engine; set{" "}
+          <code>PIXELATOR_ALLOW_TURBO_FALLBACK=true</code> only if you want that old photographic path. Also:{" "}
+          <code>PIXELATOR_LORA</code>, <code>PIXELATOR_DEVICE</code>, <code>PIXELATOR_DTYPE</code>.
         </p>
       </Section>
       <Section title="Style profiles">

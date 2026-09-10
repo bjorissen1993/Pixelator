@@ -27,3 +27,4 @@ class CharacterPatch(BaseModel):
     identityLock: IdentityLock | None = None
     composition: CompositionSettings | None = None
     emotion: EmotionProfile | None = None
+    rotationStrategy: str | None = None

@@ -48,10 +48,23 @@ class PixelLabProvider(GenerationProvider):
             nativePixelOutput=True,
             notes=(
                 "Uses your PixelLab account via PIXELLAB_API_KEY. "
-                "create-character-v3 generates a native pixel sprite and 8 directions. "
+                "South generation and generate8Directions are native pixel jobs; "
+                "stable 8-direction output is a native batch, incremental rotation is sequential. "
                 "Credits are billed by PixelLab. This is their model, not a local substitute."
             ),
             capabilities=ProviderCapabilities(
+                textToSprite=True,
+                imageToSprite=True,
+                rotateSprite=True,
+                generate8Directions=True,
+                generateState=True,
+                generateAnimation=True,
+                initImage=True,
+                inpainting=False,
+                paletteConditioning=False,
+                negativePrompt=False,
+                seed=True,
+                poseConditioning=True,
                 supportsTextToImage=True,
                 supportsImg2Img=True,
                 supportsImageToImage=True,
@@ -173,6 +186,76 @@ class PixelLabProvider(GenerationProvider):
         if len(directions) < 4:
             raise RuntimeError("PixelLab 8-direction job did not return enough facings")
         return directions
+
+    def generate_south(self, prompt: PromptLayers, seed: int | None = None, size: int = 48, view: str = "") -> GeneratedImage:
+        self.size = max(32, min(128, size))
+        generated = self.generate_base_character(prompt, seed)
+        generated.debug.view = view
+        generated.debug.targetDirection = "S"
+        return generated
+
+    def rotate_sprite(
+        self,
+        reference: Image.Image,
+        from_direction,
+        to_direction,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        from_view: str = "",
+        to_view: str = "",
+        strength: float = 0.36,
+        size: int = 48,
+        guidance: float | None = None,
+        palette=None,
+    ) -> GeneratedImage:
+        if reference is None:
+            raise ValueError("rotateSprite requires a real reference image")
+        self.size = max(32, min(128, size))
+        directions = self.rotate_reference(reference, prompt, seed=seed)
+        image = directions.get(to_direction) or directions.get(from_direction) or reference
+        generated = GeneratedImage(image, seed, prompt)
+        generated.debug.usedReference = True
+        generated.debug.referenceDirection = from_direction
+        generated.debug.targetDirection = to_direction
+        generated.debug.view = to_view or from_view
+        generated.direction_images = directions
+        return generated
+
+    def generate_8_directions(
+        self,
+        reference_south: Image.Image,
+        prompt: PromptLayers,
+        seed: int | None = None,
+        view: str = "",
+        size: int = 48,
+        palette=None,
+        strategy: str = "stable",
+        on_progress=None,
+    ):
+        if reference_south is None:
+            raise ValueError("generate8Directions requires a South reference image")
+        if strategy == "incremental":
+            return super().generate_8_directions(
+                reference_south, prompt, seed, view, size, palette, strategy, on_progress
+            )
+        self.size = max(32, min(128, size))
+        directions = self.rotate_reference(reference_south, prompt, seed=seed)
+        results = {}
+        order = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"]
+        for index, direction in enumerate(order, start=1):
+            image = directions.get(direction) or (reference_south if direction == "S" else None)
+            if image is None:
+                continue
+            generated = GeneratedImage(image, seed, prompt)
+            generated.debug.usedReference = True
+            generated.debug.referenceDirection = "S"
+            generated.debug.targetDirection = direction
+            generated.debug.view = view
+            generated.debug.rotationStrategy = "stable"
+            results[direction] = generated
+            if on_progress:
+                on_progress(index, 8, f"Generating rotations {index}/8 ({direction})")
+        return results
 
     def generate_base_character(self, prompt: PromptLayers, seed: int | None = None) -> GeneratedImage:
         pack = self.create_character_pack(prompt, seed=seed, size=self.size)

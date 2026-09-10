@@ -56,7 +56,19 @@ class UpdateStateRequest(BaseModel):
 
 
 class ProviderCapabilities(BaseModel):
-    supportsTextToImage: bool = True
+    textToSprite: bool = False
+    imageToSprite: bool = False
+    rotateSprite: bool = False
+    generate8Directions: bool = False
+    generateState: bool = False
+    generateAnimation: bool = False
+    initImage: bool = False
+    inpainting: bool = False
+    paletteConditioning: bool = False
+    negativePrompt: bool = False
+    seed: bool = True
+    poseConditioning: bool = False
+    supportsTextToImage: bool = False
     supportsImg2Img: bool = False
     supportsImageToImage: bool = False
     supportsReferenceImage: bool = False
@@ -73,9 +85,9 @@ class ProviderCapabilities(BaseModel):
     supportsAnimation: bool = False
     supportsSkeletonGuidance: bool = False
     nativePixelOutput: bool = False
-    preferredSizes: list[int] = Field(default_factory=lambda: [64, 96, 128, 256, 512])
-    preferredSize: int = 128
-    workingSize: int = 128
+    preferredSizes: list[int] = Field(default_factory=lambda: [32, 48, 64, 96, 128])
+    preferredSize: int = 48
+    workingSize: int = 48
     batchIsSequential: bool = True
 
 

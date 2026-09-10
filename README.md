@@ -35,32 +35,27 @@ Open the printed localhost URL. Vite proxies `/api`, `/health`, and `/data` to F
 ## Environment
 ```
 PIXELATOR_PROVIDER=auto
-MODEL_ID=stabilityai/sdxl-turbo
-PIXEL_MODEL_ID=
-LORA_PATH=
-LORA_STRENGTH=0.8
-CONTROLNET_MODEL=
-IP_ADAPTER_MODEL=
-DEVICE=cuda
-DTYPE=
-WORKING_SIZE=128
-GENERATION_SIZE=128
-INFERENCE_STEPS=4
-GUIDANCE_SCALE=0
-CANDIDATE_COUNT=3
+PIXELATOR_MODEL_ID=
+PIXELATOR_LORA=
+PIXELATOR_DEVICE=cuda
+PIXELATOR_DTYPE=
+PIXELATOR_ALLOW_TURBO_FALLBACK=false
+WORKING_SIZE=48
+INFERENCE_STEPS=12
+GUIDANCE_SCALE=3.5
+CANDIDATE_COUNT=2
 PIXELLAB_API_KEY=
-ENABLE_BG_REMOVAL=true
+ENABLE_BG_REMOVAL=false
 ```
 
-`PIXELATOR_PROVIDER` is `auto`, `pixellab`, `diffusers`, or `pixel-diffusers`. `auto` uses PixelLab when `PIXELLAB_API_KEY` is set, otherwise the local Diffusers model. `WORKING_SIZE` presets: `native48`, `64`, `96`, `128`, `256`, `512`. Local rasters are reduced to the 48×48 sprite with nearest/block-mode, never Lanczos. Turbo fallback still renders at 512 internally because that checkpoint is not native pixel-art.
+`PIXELATOR_PROVIDER` is `auto`, `pixellab`, `local`, or `fallback`. `auto` uses PixelLab when `PIXELLAB_API_KEY` is set, otherwise a local pixel checkpoint from `PIXELATOR_MODEL_ID`. SDXL-Turbo is not the default engine. Sprite sizes are 32, 48, 64, 96, and 128. Post-processing only cleans palette, alpha, and nearest-neighbor fit — it does not invent pixel-art style. The optional Turbo fallback still renders at 512 internally because that checkpoint is photographic.
 
 ## Workflow
-1. Generate Base → review Pending Sprite → Accept as Base (soft palette lock). Re-pixelize re-runs cleanup on the last source without a new model pass.
-2. Accepted Base is a real img2img / neighbor-graph identity reference
-3. Generate 8 Directions sequentially (S → SW → W → NW → N → NE → E → SE). Each facing produces 2–4 candidates.
-4. Accept one candidate. Accepted directions are not overwritten.
-5. Reject with a reason; the next regenerate uses that feedback in the prompt/strength. This is not model training.
-6. Export sprite sheets, metadata, or an accepted-only training dataset (no training is performed)
+1. Generate creates one canonical South idle sprite. Accept it as Base to lock identity and the accepted palette.
+2. Generate All Directions rotates from that reference image (stable identity from South, or incremental 45° steps).
+3. States and animations start from accepted sprites, not from text alone.
+4. Reject keeps the record; Remove deletes the asset. This memory is not model training.
+5. Export sprite sheets, metadata, or an accepted-only training dataset (no training is performed)
 
 ## Data
 ```

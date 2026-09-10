@@ -9,7 +9,8 @@ export const CAMERA_ANGLES = ["high-top-down", "low-top-down", "side"] as const;
 export const DETAIL_LEVELS = ["low", "medium", "high"] as const;
 export const OUTLINE_STYLES = ["black", "colored", "selective", "lineless"] as const;
 export const SHADING_STYLES = ["none", "basic", "medium", "detailed"] as const;
-export const PALETTE_MODES = ["generated", "project", "custom", "locked", "strict", "soft", "unlocked"] as const;
+export const PALETTE_MODES = ["generated", "accepted", "project", "custom", "locked", "strict", "soft", "unlocked"] as const;
+export const ROTATION_STRATEGIES = ["stable", "incremental"] as const;
 export const BODY_TEMPLATES = ["bipedal", "semi-chibi-bipedal", "quadrupedal", "custom"] as const;
 export const ASSET_STATUSES = ["missing", "pending", "accepted", "rejected", "locked"] as const;
 export const JOB_STATUSES = ["queued", "generating", "processing", "completed", "failed"] as const;
@@ -42,4 +43,4 @@ export const APPLY_MODES = [
   "regenerate_head_layers",
 ] as const;
 
-export const DEFAULT_SPRITE_SIZES = [32, 48, 56, 64, 96, 128] as const;
+export const DEFAULT_SPRITE_SIZES = [32, 48, 64, 96, 128] as const;

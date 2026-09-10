@@ -20,12 +20,14 @@ export function GenerationPanel() {
     <div className="stack">
       <Section title="Generation">
         <p className="hint">
-          Provider: <strong>{provider?.name ?? "unknown"}</strong> · model {provider?.modelId}
-          {provider?.fallbackTurbo ? " (fallback SDXL-Turbo, not a pixel checkpoint)" : ""}.
-          LoRA: {provider?.loraLoaded ? "loaded" : "not loaded"}.
-          Native pixel output: {provider?.nativePixelOutput && !provider?.fallbackTurbo ? "yes" : "no"}.
-          Reference img2img: {provider?.supportsReference || provider?.capabilities?.supportsImg2Img ? "yes" : "no"}.
-          Working size: {provider?.workingSize ?? provider?.capabilities?.workingSize ?? "?"}px.
+          Provider: <strong>{provider?.name ?? "unconfigured"}</strong> · model {provider?.modelId || "none"}
+          {provider?.fallbackTurbo ? " (optional SDXL-Turbo fallback, not the default engine)" : ""}.
+          Capabilities: textToSprite {provider?.capabilities?.textToSprite ? "yes" : "no"}, rotateSprite{" "}
+          {provider?.capabilities?.rotateSprite ? "yes" : "no"}, generate8Directions{" "}
+          {provider?.capabilities?.generate8Directions ? (provider.capabilities.batchIsSequential ? "sequential" : "native batch") : "no"}
+          , paletteConditioning {provider?.capabilities?.paletteConditioning ? "yes" : "no"}, initImage{" "}
+          {provider?.capabilities?.initImage ? "yes" : "no"}.
+          Sprite sizes: {(provider?.capabilities?.preferredSizes ?? [32, 48, 64, 96, 128]).join(", ")}.
         </p>
         <div className="action-grid">
           <Button disabled={generating || !!busy} onClick={() => go("Generating base", () => api.generateBase(character.id))}>
@@ -80,7 +82,7 @@ export function GenerationPanel() {
             <span className="spinner" aria-hidden="true" />
             <div>
               <strong>{progress?.label || busy}</strong>
-              <p>{progress?.step || "generating source image"}</p>
+              <p>{progress?.step || "Generating sprite"}</p>
               <PipelineSteps progress={progress} />
             </div>
           </div>
