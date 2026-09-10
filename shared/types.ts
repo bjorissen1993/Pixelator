@@ -63,10 +63,14 @@ export interface CompositionSettings {
   fullBodySprite: boolean;
   entireSilhouetteVisible: boolean;
   preventCropping: boolean;
+  preventPortrait: boolean;
+  preventCloseup: boolean;
   centerCharacter: boolean;
   fitSafeMargins: boolean;
-  noPortraitCloseup: boolean;
+  oneCharacterOnly: boolean;
+  showFullSpiritBody: boolean;
   showFullSpiritTail: boolean;
+  noPortraitCloseup: boolean;
 }
 
 export interface PaletteSettings {
@@ -103,6 +107,8 @@ export interface QualityWarning {
 export interface QualityValidation {
   ok: boolean;
   score?: number;
+  compositionScore?: number;
+  validForBase?: boolean;
   warnings: QualityWarning[];
   futureChecks: string[];
   occupancy?: number;
@@ -110,6 +116,18 @@ export interface QualityValidation {
   widthRatio?: number;
   centerX?: number;
   centerY?: number;
+  bboxLeft?: number;
+  bboxTop?: number;
+  bboxRight?: number;
+  bboxBottom?: number;
+  touchesTop?: boolean;
+  touchesBottom?: boolean;
+  touchesLeft?: boolean;
+  touchesRight?: boolean;
+  portraitFailed?: boolean;
+  cropFailed?: boolean;
+  fullBodyFailed?: boolean;
+  retryTriggered?: boolean;
 }
 
 export interface GenerationDebug {
@@ -131,6 +149,7 @@ export interface GenerationDebug {
   usedReference: boolean;
   usedIpAdapter: boolean;
   cropRetries?: number;
+  retryTriggered?: boolean;
 }
 
 export interface SpriteAsset {

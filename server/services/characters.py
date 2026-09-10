@@ -35,8 +35,30 @@ def unique_slug(name: str) -> str:
     return f"{base}-{index}"
 
 
+def _stale_base_validation(validation) -> bool:
+    if validation is None:
+        return True
+    return validation.occupancy > 0 and validation.bboxRight == 0 and validation.bboxBottom == 0
+
+
+def _refresh_stale_base_validation(character: CharacterProfile) -> bool:
+    from services.generation import _revalidate_base_asset
+
+    changed = False
+    if character.pendingBase and _stale_base_validation(character.pendingBase.validation):
+        character.pendingBase.validation = _revalidate_base_asset(character, character.pendingBase)
+        changed = True
+    if character.acceptedBase and _stale_base_validation(character.acceptedBase.sprite.validation):
+        character.acceptedBase.sprite.validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
+        changed = True
+    return changed
+
+
 def _with_previews(character: CharacterProfile) -> CharacterProfile:
-    if ensure_character_previews(character):
+    changed = ensure_character_previews(character)
+    if _refresh_stale_base_validation(character):
+        changed = True
+    if changed:
         return store.save(character)
     return character
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from models.enums import (
     AssetStatus,
@@ -44,10 +44,25 @@ class CompositionSettings(BaseModel):
     fullBodySprite: bool = True
     entireSilhouetteVisible: bool = True
     preventCropping: bool = True
+    preventPortrait: bool = True
+    preventCloseup: bool = True
     centerCharacter: bool = True
     fitSafeMargins: bool = True
-    noPortraitCloseup: bool = True
+    oneCharacterOnly: bool = True
+    showFullSpiritBody: bool = True
     showFullSpiritTail: bool = True
+    noPortraitCloseup: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_composition(cls, value):
+        if not isinstance(value, dict):
+            return value
+        if "noPortraitCloseup" in value:
+            flag = bool(value["noPortraitCloseup"])
+            value.setdefault("preventPortrait", flag)
+            value.setdefault("preventCloseup", flag)
+        return value
 
 
 class PaletteSettings(BaseModel):
@@ -84,6 +99,8 @@ class QualityWarning(BaseModel):
 class QualityValidation(BaseModel):
     ok: bool = True
     score: int = 100
+    compositionScore: int = 100
+    validForBase: bool = True
     warnings: list[QualityWarning] = Field(default_factory=list)
     futureChecks: list[str] = Field(default_factory=list)
     occupancy: float = 0
@@ -91,6 +108,18 @@ class QualityValidation(BaseModel):
     widthRatio: float = 0
     centerX: float = 0
     centerY: float = 0
+    bboxLeft: int = 0
+    bboxTop: int = 0
+    bboxRight: int = 0
+    bboxBottom: int = 0
+    touchesTop: bool = False
+    touchesBottom: bool = False
+    touchesLeft: bool = False
+    touchesRight: bool = False
+    portraitFailed: bool = False
+    cropFailed: bool = False
+    fullBodyFailed: bool = False
+    retryTriggered: bool = False
 
 
 class GenerationDebug(BaseModel):
@@ -112,6 +141,7 @@ class GenerationDebug(BaseModel):
     usedReference: bool = False
     usedIpAdapter: bool = False
     cropRetries: int = 0
+    retryTriggered: bool = False
 
 
 class SpriteAsset(BaseModel):

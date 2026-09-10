@@ -339,6 +339,7 @@ button.compass-cell { width: 100%; font: inherit; }
 }
 .candidate-btn.active { border-color: #c8ea83; }
 .quality-warnings { margin: 0; padding-left: 1.1rem; color: #d6c27a; font-size: 12px; }
+.quality-warnings.invalid-base { color: #e8a0a0; margin-top: 8px; }
 .debug-panel { margin-top: 12px; color: #9aa890; font-size: 12px; }
 .debug-panel dl { display: grid; gap: 6px; }
 .debug-panel dt { color: #7d8a72; }

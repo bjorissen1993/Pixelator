@@ -12,9 +12,9 @@ from models.generation import PromptLayers
 from persistence.store import asset_path
 from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
-from processing.preview import make_preview, preview_relative
+from processing.validation import invalid_base_reasons, is_valid_base, validate_sprite
 from prompts.builder import build_prompt, build_pixellab_description
-from prompts.composition import FRAMING_RETRY
+from prompts.composition import FRAMING_RETRY, composition_constraints
 from providers.base import DirectionSpec, GeneratedImage
 from providers.registry import get_provider
 from services import characters as character_service
@@ -102,7 +102,32 @@ def identity_sprite(character: CharacterProfile) -> Image.Image | None:
     return load_image(character.acceptedBase.sprite.path)
 
 
-def process_generated(character: CharacterProfile, image: Image.Image, direction=None):
+def process_generated(character: CharacterProfile, image: Image.Image, direction=None, for_base: bool = False):
+    provider = get_provider()
+    native = provider.capabilities.nativePixelOutput
+    skip_palette = native and provider.info.id == "pixellab"
+    working = character.spriteSize if native else max(character.spriteSize, config.WORKING_SIZE)
+    comp = character.composition
+    margin = 0.10 if comp.fitSafeMargins or comp.preventCropping else 0.04
+    return pipeline.process(
+        image,
+        character.spriteSize,
+        character.palette.colorCount,
+        character.outline,
+        False if native else config.ENABLE_BG_REMOVAL,
+        None if skip_palette else palette_colors(character),
+        on_step=lambda step: progress.set_step(character.id, step),
+        native=native,
+        working_size=working,
+        palette_mode=palette_mode_name(character),
+        reference=None if for_base else identity_sprite(character),
+        direction=direction,
+        fit_margin=margin,
+        center=comp.centerCharacter,
+        spirit_form=character.spirit.enabled or character.spirit.noLegs,
+        for_base=for_base,
+        one_character=comp.oneCharacterOnly,
+    )
     provider = get_provider()
     native = provider.capabilities.nativePixelOutput
     skip_palette = native and provider.info.id == "pixellab"
@@ -131,7 +156,51 @@ def process_generated(character: CharacterProfile, image: Image.Image, direction
 def looks_cropped(validation) -> bool:
     if validation is None:
         return False
-    return any(warning.code in {"likely_cropped", "touches_edges", "silhouette_incomplete"} for warning in validation.warnings)
+    return any(
+        warning.code
+        in {
+            "likely_cropped",
+            "touches_edges",
+            "touches_top",
+            "touches_bottom",
+            "touches_left",
+            "touches_right",
+            "silhouette_incomplete",
+        }
+        for warning in validation.warnings
+    )
+
+
+def _revalidate_base_asset(character: CharacterProfile, asset: SpriteAsset | None):
+    if asset is None:
+        return None
+    sprite = load_image(asset.path)
+    if sprite is None:
+        return asset.validation
+    source = load_image(asset.sourcePath) if asset.sourcePath else None
+    return validate_sprite(
+        sprite,
+        character.spriteSize,
+        character.palette.colorCount,
+        source=source,
+        palette=palette_colors(character),
+        spirit_form=character.spirit.enabled or character.spirit.noLegs,
+        for_base=True,
+        one_character=character.composition.oneCharacterOnly,
+    )
+
+
+def _require_valid_pending_base(character: CharacterProfile) -> SpriteAsset:
+    pending = character.pendingBase
+    if pending is None:
+        raise ValueError("No pending sprite to promote")
+    validation = _revalidate_base_asset(character, pending)
+    pending.validation = validation
+    reasons = invalid_base_reasons(validation)
+    if reasons:
+        character_service.save_character(character)
+        raise ValueError(" ".join(reasons))
+    return pending
 
 
 def make_asset(
@@ -269,15 +338,16 @@ def generate_image(
     state_id: str | None = None,
     direction: Direction | None = None,
     allow_crop_retry: bool = True,
+    for_base: bool = False,
 ):
     provider = get_provider()
+    native = provider.capabilities.nativePixelOutput
     attempts = 1
-    if (
-        allow_crop_retry
-        and character.composition.preventCropping
-        and not provider.capabilities.nativePixelOutput
-    ):
-        attempts = 2
+    if allow_crop_retry and not native and character.composition.preventCropping:
+        if for_base and character.composition.fullBodySprite:
+            attempts = 3
+        elif not for_base:
+            attempts = 2
     last = None
     retries = 0
     working_prompt = prompt
@@ -285,11 +355,12 @@ def generate_image(
     for attempt in range(attempts):
         if attempt > 0:
             retries = attempt
-            progress.set_step(character.id, "retrying cropped sprite")
+            progress.set_step(character.id, "retrying cropped sprite" if not for_base else "retrying invalid base framing")
+            stronger = composition_constraints(character, stronger=True)
             working_prompt = prompt.model_copy(
                 update={
                     "override": ", ".join(part for part in (prompt.override, FRAMING_RETRY) if part),
-                    "composition": ", ".join(part for part in (prompt.composition, FRAMING_RETRY) if part),
+                    "composition": stronger,
                     "final": f"{prompt.final}, {FRAMING_RETRY}",
                 }
             )
@@ -309,12 +380,18 @@ def generate_image(
             used_reference = True
         else:
             generated = provider.generate_direction(model_prompt, seed=working_seed)
-        sprite, preview, validation = process_generated(character, generated.image, direction=direction)
+        sprite, preview, validation = process_generated(character, generated.image, direction=direction, for_base=for_base)
         if generated.debug:
             generated.debug.cropRetries = retries
+            generated.debug.retryTriggered = retries > 0
             generated.debug.prompt = working_prompt.final
+        if validation:
+            validation.retryTriggered = retries > 0
         last = (generated, sprite, preview, validation, used_reference)
-        if not looks_cropped(validation):
+        if for_base:
+            if is_valid_base(validation):
+                break
+        elif not looks_cropped(validation):
             break
     if last is None:
         raise RuntimeError("Generation produced no image")
@@ -351,14 +428,14 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
             generated = GeneratedImage(pack["south"], pack.get("seed", chosen_seed), prompt)
             generated.external_id = pack.get("external_id")
             generated.direction_images = pack.get("directions")
-            sprite, preview, validation = process_generated(character, generated.image)
+            sprite, preview, validation = process_generated(character, generated.image, for_base=True)
             used_reference = False
             if pack.get("external_id"):
                 character.externalProviderId = provider.info.id
                 character.externalCharacterId = pack["external_id"]
         else:
             generated, sprite, preview, validation, used_reference = generate_image(
-                character, prompt, use_reference=False, seed=chosen_seed
+                character, prompt, use_reference=False, seed=chosen_seed, for_base=True
             )
         anchor = estimate_head_anchor(sprite, character.spriteSize)
         asset = make_asset(
@@ -384,9 +461,7 @@ def generate_base(character_id: str, seed: int | None = None, override: str = ""
 
 
 def _copy_pending_to_accepted(character: CharacterProfile, lock_palette: bool) -> CharacterProfile:
-    pending = character.pendingBase
-    if pending is None:
-        raise ValueError("No pending sprite to promote")
+    pending = _require_valid_pending_base(character)
     sprite_image = load_image(pending.path)
     if sprite_image is None:
         raise ValueError("Pending sprite file is missing")
@@ -469,7 +544,7 @@ def reprocess_from_source(character_id: str) -> dict:
             source = load_image(source_asset.path)
         if source is None:
             raise ValueError("Source image file is missing")
-        sprite, preview, validation = process_generated(character, source)
+        sprite, preview, validation = process_generated(character, source, for_base=True)
         asset = make_asset(
             character,
             sprite,
@@ -504,7 +579,7 @@ def generate_variation(character_id: str, seed: int | None = None, override: str
             raise ValueError("Accept a base character before generating a variation")
         prompt = build_prompt(character, override=override or "subtle identity-preserving variation")
         generated, sprite, preview, validation, used_reference = generate_image(
-            character, prompt, use_reference=True, seed=seed or character.seed, strength=0.35
+            character, prompt, use_reference=True, seed=seed or character.seed, strength=0.35, for_base=True
         )
         anchor = estimate_head_anchor(sprite, character.spriteSize)
         asset = make_asset(
@@ -958,6 +1033,15 @@ def generate_direction_set(
     character = character_service.get_character(character_id)
     if character.acceptedBase is None:
         raise ValueError("Accept a base character before generating directions")
+    accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
+    character.acceptedBase.sprite.validation = accepted_validation
+    reasons = invalid_base_reasons(accepted_validation)
+    if reasons:
+        character_service.save_character(character)
+        raise ValueError(
+            "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
+            + " ".join(reasons)
+        )
     state_id = state_id or (character.states[0].id if character.states else "")
     if not state_id:
         raise ValueError("Create a state before generating directions")
@@ -1155,7 +1239,7 @@ def refine_asset(
         init = load_image(character.pendingBase.sourcePath or character.pendingBase.path)
     prompt = build_prompt(character, override=override)
     generated, sprite, preview, validation, used_reference = generate_image(
-        character, prompt, use_reference=use_as_reference, seed=resolve_seed(character, seed, "variation"), strength=strength, init_image=init
+        character, prompt, use_reference=use_as_reference, seed=resolve_seed(character, seed, "variation"), strength=strength, init_image=init, for_base=True
     )
     asset = make_asset(
         character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, estimate_head_anchor(sprite, character.spriteSize), preview, source=generated.image, negative=prompt.negative

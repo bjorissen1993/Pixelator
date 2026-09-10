@@ -4,6 +4,8 @@ import type { Direction, DirectionSlot, RejectionReason, SpriteAsset } from "@sh
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, PixelImage, Select, SpritePreviewCard } from "./ui";
+import { BaseCompositionPanel } from "./BaseCompositionPanel";
+import { canAcceptAsBase, invalidBaseReasons } from "../baseValidation";
 
 const GRID: Array<Direction | "REF"> = ["NW", "N", "NE", "W", "REF", "E", "SW", "S", "SE"];
 
@@ -21,6 +23,7 @@ function QualityBlock({ asset }: { asset?: SpriteAsset }) {
     <div className="quality-block">
       <p className="hint">
         Quality score <strong>{validation.score ?? "—"}</strong>
+        {validation.compositionScore != null ? ` · composition ${validation.compositionScore}` : ""}
         {validation.ok ? "" : " · has errors"}
       </p>
       {validation.warnings.length ? (
@@ -84,6 +87,9 @@ export function StudioScreen() {
   const state = character.states.find((item) => item.id === selectedStateId) ?? character.states[0];
   const locked = generating || !!busy;
   const selectedSlot = state?.directions.find((item) => item.direction === selectedDirection);
+  const pendingInvalid = invalidBaseReasons(character.pendingBase?.validation);
+  const acceptDisabled = locked || !canAcceptAsBase(character.pendingBase);
+  const acceptedInvalid = invalidBaseReasons(character.acceptedBase?.sprite?.validation);
 
   const generateEight = () => {
     if (!state) return;
@@ -114,7 +120,7 @@ export function StudioScreen() {
               Generate Base
             </Button>
             <Button
-              disabled={locked || !character.acceptedBase || !state}
+              disabled={locked || !character.acceptedBase || !state || acceptedInvalid.length > 0}
               onClick={generateEight}
             >
               Generate 8 Directions
@@ -131,7 +137,7 @@ export function StudioScreen() {
             progress={progress}
             actions={
               <>
-                <Button disabled={locked || !character.pendingBase} onClick={() => run("Accepting base", () => api.acceptBase(character.id).then(setCharacter), { generating: false })}>
+                <Button disabled={acceptDisabled} onClick={() => run("Accepting base", () => api.acceptBase(character.id).then(setCharacter), { generating: false })}>
                   Accept as Base
                 </Button>
                 <Button variant="ghost" disabled={locked || !character.pendingBase} onClick={() => run("Discarding pending", () => api.discardPending(character.id).then(setCharacter), { generating: false })}>
@@ -164,7 +170,7 @@ export function StudioScreen() {
             asset={character.acceptedBase?.sprite}
             actions={
               <>
-                <Button variant="secondary" disabled={locked || !character.pendingBase} onClick={() => run("Replacing base", () => api.replaceBase(character.id).then(setCharacter), { generating: false })}>
+                <Button variant="secondary" disabled={acceptDisabled} onClick={() => run("Replacing base", () => api.replaceBase(character.id).then(setCharacter), { generating: false })}>
                   Replace base
                 </Button>
                 <Button variant="ghost" disabled={locked || !character.acceptedBase} onClick={() => run("Clearing reference", () => api.clearReference(character.id).then(setCharacter), { generating: false })}>
@@ -175,6 +181,22 @@ export function StudioScreen() {
           />
         </div>
 
+        {pendingInvalid.length ? (
+          <ul className="quality-warnings invalid-base">
+            {pendingInvalid.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        ) : null}
+        <BaseCompositionPanel asset={character.pendingBase} />
+        {acceptedInvalid.length ? (
+          <ul className="quality-warnings invalid-base">
+            {acceptedInvalid.map((reason) => (
+              <li key={`accepted-${reason}`}>{reason}</li>
+            ))}
+          </ul>
+        ) : null}
+
         {generating && progress?.total ? (
           <p className="job-line">
             {progress.label}: {progress.currentItem || progress.step} · {progress.current}/{progress.total}
@@ -184,7 +206,7 @@ export function StudioScreen() {
         <section className="block">
           <header className="block-head">
             <h2>{state ? `${state.name} directions` : "Directions"}</h2>
-            <Button disabled={locked || !character.acceptedBase || !state} onClick={generateEight}>
+            <Button disabled={locked || !character.acceptedBase || !state || acceptedInvalid.length > 0} onClick={generateEight}>
               Generate 8 Directions
             </Button>
           </header>

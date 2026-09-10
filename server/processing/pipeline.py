@@ -84,12 +84,33 @@ def fit_to_canvas(
     resample: Image.Resampling | None = None,
     margin: float = 0.10,
     center: bool = True,
+    allow_upscale: bool = True,
+    recrop: bool = True,
 ) -> Image.Image:
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    cropped = crop_alpha(image.convert("RGBA"))
+    rgba = image.convert("RGBA")
     pad = max(2, int(round(size * max(0.04, min(margin, 0.22)))))
+    bbox = rgba.getchannel("A").getbbox()
+    if not bbox:
+        return canvas
+    if not recrop and rgba.size == (size, size):
+        left, top, right, bottom = bbox
+        inside = left >= pad and top >= pad and right <= size - pad and bottom <= size - pad
+        if inside:
+            cropped = rgba.crop(bbox)
+            x = (size - cropped.width) // 2 if center else max(pad, min(left, size - pad - cropped.width))
+            y = (size - cropped.height) // 2 if center else max(pad, min(top, size - pad - cropped.height))
+            x = max(pad, min(x, size - pad - cropped.width))
+            y = max(pad, min(y, size - pad - cropped.height))
+            canvas.alpha_composite(cropped, (x, y))
+            return canvas
+        recrop = True
+        allow_upscale = False
+    cropped = crop_alpha(rgba) if recrop else rgba
     inner = max(1, size - pad * 2)
     ratio = min(inner / max(1, cropped.width), inner / max(1, cropped.height))
+    if not allow_upscale:
+        ratio = min(ratio, 1.0)
     target = (max(1, int(cropped.width * ratio)), max(1, int(cropped.height * ratio)))
     shrinking = target[0] < cropped.width or target[1] < cropped.height
     if resample is None:
@@ -310,6 +331,8 @@ class PixelPipeline:
         fit_margin: float = 0.10,
         center: bool = True,
         spirit_form: bool = False,
+        for_base: bool = False,
+        one_character: bool = True,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
         if native:
             return self.process_native(
@@ -324,10 +347,13 @@ class PixelPipeline:
                 fit_margin=fit_margin,
                 center=center,
                 spirit_form=spirit_form,
+                for_base=for_base,
+                one_character=one_character,
             )
         if on_step:
             on_step("removing background")
         rgba = _prepare_source(remove_background(image, remove_bg))
+        source = rgba.copy()
         source_size = max(rgba.size)
         work_size = max(size, working_size or size)
         if on_step:
@@ -346,7 +372,15 @@ class PixelPipeline:
                 sprite = work
             else:
                 sprite = block_mode_downscale(work, size)
-                sprite = fit_to_canvas(sprite, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
+                sprite = fit_to_canvas(
+                    sprite,
+                    size,
+                    resample=Image.Resampling.NEAREST,
+                    margin=fit_margin,
+                    center=center,
+                    allow_upscale=False,
+                    recrop=False,
+                )
         sprite = flatten_alpha(sprite)
         if cleanup:
             if on_step:
@@ -358,7 +392,15 @@ class PixelPipeline:
             on_step("applying outline")
         sprite = apply_outline(sprite, outline)
         sprite = flatten_alpha(sprite, cutoff=16)
-        sprite = fit_to_canvas(sprite, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
+        sprite = fit_to_canvas(
+            sprite,
+            size,
+            resample=Image.Resampling.NEAREST,
+            margin=fit_margin,
+            center=center,
+            allow_upscale=False,
+            recrop=False,
+        )
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
         validation = validate_sprite(
             sprite,
@@ -369,6 +411,9 @@ class PixelPipeline:
             palette=locked_palette,
             direction=direction,
             spirit_form=spirit_form,
+            source=source,
+            for_base=for_base,
+            one_character=one_character,
         )
         return sprite, preview, validation
 
@@ -385,12 +430,24 @@ class PixelPipeline:
         fit_margin: float = 0.10,
         center: bool = True,
         spirit_form: bool = False,
+        for_base: bool = False,
+        one_character: bool = True,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
         if on_step:
             on_step("fitting native pixel sprite")
         rgba = flatten_alpha(image.convert("RGBA"), cutoff=32)
+        source = rgba.copy()
         sprite = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
         sprite = flatten_alpha(sprite, cutoff=32)
+        sprite = fit_to_canvas(
+            sprite,
+            size,
+            resample=Image.Resampling.NEAREST,
+            margin=fit_margin,
+            center=center,
+            allow_upscale=False,
+            recrop=False,
+        )
         if locked_palette and palette_mode in ("strict", "locked", "soft", "custom", "project"):
             sprite = map_to_palette(sprite, locked_palette, "soft" if palette_mode == "soft" else "strict")
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
@@ -403,6 +460,9 @@ class PixelPipeline:
             palette=locked_palette,
             direction=direction,
             spirit_form=spirit_form,
+            source=source,
+            for_base=for_base,
+            one_character=one_character,
         )
         return sprite, preview, validation
 

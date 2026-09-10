@@ -1,4 +1,5 @@
 from models.character import CharacterProfile
+from prompts.composition import composition_constraints
 
 
 def identity_constraints(character: CharacterProfile) -> str:
@@ -84,4 +85,7 @@ def hard_constraints(character: CharacterProfile) -> str:
         )
     if character.composition.entireSilhouetteVisible:
         parts.append("entire silhouette visible, nothing cut off by the frame")
+    framing = composition_constraints(character)
+    if framing:
+        parts.append(f"hard composition constraints: {framing}")
     return ", ".join(parts)

@@ -3,25 +3,34 @@ import type { CharacterProfile, CompositionSettings, IdentityLock } from "@share
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { BaseCompositionPanel } from "./BaseCompositionPanel";
+import { canAcceptAsBase, invalidBaseReasons } from "../baseValidation";
 import { Area, Button, Field, Section, Select, SpritePreviewCard, TextInput, Toggle } from "./ui";
 
 const COMPOSITION_DEFAULTS: CompositionSettings = {
   fullBodySprite: true,
   entireSilhouetteVisible: true,
   preventCropping: true,
+  preventPortrait: true,
+  preventCloseup: true,
   centerCharacter: true,
   fitSafeMargins: true,
-  noPortraitCloseup: true,
+  oneCharacterOnly: true,
+  showFullSpiritBody: true,
   showFullSpiritTail: true,
+  noPortraitCloseup: true,
 };
 
 const COMPOSITION_LABELS: Array<[keyof CompositionSettings, string]> = [
   ["fullBodySprite", "Full body sprite"],
   ["entireSilhouetteVisible", "Entire silhouette visible"],
   ["preventCropping", "Prevent cropping"],
+  ["preventPortrait", "Prevent portrait composition"],
+  ["preventCloseup", "Prevent close-up"],
   ["centerCharacter", "Center character on canvas"],
   ["fitSafeMargins", "Fit within safe margins"],
-  ["noPortraitCloseup", "No portrait / no bust / no close-up"],
+  ["oneCharacterOnly", "One character only"],
+  ["showFullSpiritBody", "For spirit characters: show full lower spirit body"],
   ["showFullSpiritTail", "For spirit characters: show full spirit tail"],
 ];
 
@@ -52,6 +61,8 @@ export function CharacterScreen() {
   }, [character]);
   if (!character || !draft) return null;
   const locked = generating || !!busy;
+  const pendingInvalid = invalidBaseReasons(character.pendingBase?.validation);
+  const acceptDisabled = locked || !canAcceptAsBase(character.pendingBase);
 
   const set = <K extends keyof CharacterProfile>(key: K, value: CharacterProfile[K]) =>
     setDraft({ ...draft, [key]: value });
@@ -176,8 +187,8 @@ export function CharacterScreen() {
 
       <Section title="Composition">
         <p className="hint">
-          Framing controls for game-ready full-body sprites. Prevent cropping retries once with a stronger framing
-          prompt when the result still touches the canvas edge.
+          Framing controls for game-ready full-body sprites. Invalid portrait or cropped bases cannot be accepted.
+          When Prevent cropping and Full body sprite are on, failed bases retry with stronger framing.
         </p>
         <div className="lock-grid">
           {COMPOSITION_LABELS.map(([key, label]) => (
@@ -186,7 +197,10 @@ export function CharacterScreen() {
               label={label}
               checked={draft.composition?.[key] ?? true}
               onChange={(value) => {
-                const composition = { ...draft.composition, [key]: value };
+                const composition = { ...COMPOSITION_DEFAULTS, ...draft.composition, [key]: value };
+                if (key === "preventPortrait" || key === "preventCloseup") {
+                  composition.noPortraitCloseup = composition.preventPortrait && composition.preventCloseup;
+                }
                 setDraft({ ...draft, composition });
               }}
             />
@@ -269,7 +283,11 @@ export function CharacterScreen() {
             setDraft({
               ...draft,
               spirit: { ...draft.spirit, enabled, noLegs: enabled, spectralTail: enabled, mistFade: enabled },
-              composition: { ...draft.composition, showFullSpiritTail: enabled ? true : draft.composition.showFullSpiritTail },
+              composition: {
+                ...draft.composition,
+                showFullSpiritTail: enabled ? true : draft.composition.showFullSpiritTail,
+                showFullSpiritBody: enabled ? true : draft.composition.showFullSpiritBody,
+              },
             })
           }
         />
@@ -305,7 +323,7 @@ export function CharacterScreen() {
                   Generate base
                 </Button>
                 <Button
-                  disabled={locked || !character.pendingBase}
+                  disabled={acceptDisabled}
                   onClick={() => run("Accepting base", () => api.acceptBase(character.id).then(setCharacter), { generating: false })}
                 >
                   Accept as base
@@ -341,7 +359,7 @@ export function CharacterScreen() {
               <>
                 <Button
                   variant="secondary"
-                  disabled={locked || !character.pendingBase}
+                  disabled={acceptDisabled}
                   onClick={() => run("Replacing base", () => api.replaceBase(character.id).then(setCharacter), { generating: false })}
                 >
                   Replace base
@@ -357,13 +375,20 @@ export function CharacterScreen() {
             }
           />
         </div>
-        {character.pendingBase?.validation?.warnings?.length ? (
+        {pendingInvalid.length ? (
+          <ul className="quality-warnings invalid-base">
+            {pendingInvalid.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        ) : character.pendingBase?.validation?.warnings?.length ? (
           <ul className="quality-warnings">
             {character.pendingBase.validation.warnings.map((warning) => (
               <li key={warning.code}>{warning.message}</li>
             ))}
           </ul>
         ) : null}
+        <BaseCompositionPanel asset={character.pendingBase} />
       </Section>
     </div>
   );
