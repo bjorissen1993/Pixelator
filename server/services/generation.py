@@ -14,6 +14,7 @@ from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
 from processing.preview import make_preview, preview_relative
 from prompts.builder import build_prompt, build_pixellab_description
+from prompts.composition import FRAMING_RETRY
 from providers.base import DirectionSpec, GeneratedImage
 from providers.registry import get_provider
 from services import characters as character_service
@@ -106,6 +107,8 @@ def process_generated(character: CharacterProfile, image: Image.Image, direction
     native = provider.capabilities.nativePixelOutput
     skip_palette = native and provider.info.id == "pixellab"
     working = character.spriteSize if native else max(character.spriteSize, config.WORKING_SIZE)
+    comp = character.composition
+    margin = 0.10 if comp.fitSafeMargins or comp.preventCropping else 0.04
     return pipeline.process(
         image,
         character.spriteSize,
@@ -119,7 +122,16 @@ def process_generated(character: CharacterProfile, image: Image.Image, direction
         palette_mode=palette_mode_name(character),
         reference=identity_sprite(character),
         direction=direction,
+        fit_margin=margin,
+        center=comp.centerCharacter,
+        spirit_form=character.spirit.enabled or character.spirit.noLegs,
     )
+
+
+def looks_cropped(validation) -> bool:
+    if validation is None:
+        return False
+    return any(warning.code in {"likely_cropped", "touches_edges", "silhouette_incomplete"} for warning in validation.warnings)
 
 
 def make_asset(
@@ -256,21 +268,57 @@ def generate_image(
     init_image: Image.Image | None = None,
     state_id: str | None = None,
     direction: Direction | None = None,
+    allow_crop_retry: bool = True,
 ):
-    progress.set_step(character.id, "generating source image")
     provider = get_provider()
-    model_prompt = provider_prompt(character, prompt)
-    ref = init_image or (reference_image(character, direction, state_id) if use_reference else None)
-    used_reference = False
-    if ref is not None and (
-        provider.capabilities.supportsReferenceImage or provider.capabilities.supportsImg2Img or provider.capabilities.supportsImageToImage
+    attempts = 1
+    if (
+        allow_crop_retry
+        and character.composition.preventCropping
+        and not provider.capabilities.nativePixelOutput
     ):
-        generated = provider.generate_from_reference(model_prompt, ref, seed=seed, strength=strength, init_image=init_image or ref)
-        used_reference = True
-    else:
-        generated = provider.generate_direction(model_prompt, seed=seed)
-    sprite, preview, validation = process_generated(character, generated.image, direction=direction)
-    return generated, sprite, preview, validation, used_reference
+        attempts = 2
+    last = None
+    retries = 0
+    working_prompt = prompt
+    working_seed = seed
+    for attempt in range(attempts):
+        if attempt > 0:
+            retries = attempt
+            progress.set_step(character.id, "retrying cropped sprite")
+            working_prompt = prompt.model_copy(
+                update={
+                    "override": ", ".join(part for part in (prompt.override, FRAMING_RETRY) if part),
+                    "composition": ", ".join(part for part in (prompt.composition, FRAMING_RETRY) if part),
+                    "final": f"{prompt.final}, {FRAMING_RETRY}",
+                }
+            )
+            working_seed = None if seed is None else seed + 17 * attempt
+        progress.set_step(character.id, "generating source image")
+        model_prompt = provider_prompt(character, working_prompt)
+        ref = init_image or (reference_image(character, direction, state_id) if use_reference else None)
+        used_reference = False
+        if ref is not None and (
+            provider.capabilities.supportsReferenceImage
+            or provider.capabilities.supportsImg2Img
+            or provider.capabilities.supportsImageToImage
+        ):
+            generated = provider.generate_from_reference(
+                model_prompt, ref, seed=working_seed, strength=strength, init_image=init_image or ref
+            )
+            used_reference = True
+        else:
+            generated = provider.generate_direction(model_prompt, seed=working_seed)
+        sprite, preview, validation = process_generated(character, generated.image, direction=direction)
+        if generated.debug:
+            generated.debug.cropRetries = retries
+            generated.debug.prompt = working_prompt.final
+        last = (generated, sprite, preview, validation, used_reference)
+        if not looks_cropped(validation):
+            break
+    if last is None:
+        raise RuntimeError("Generation produced no image")
+    return last
 
 
 def _track(character_id: str, label: str):
@@ -557,6 +605,7 @@ def generate_direction(
                 init_image=ref_image,
                 state_id=state_id,
                 direction=direction,
+                allow_crop_retry=layer == "full",
             )
             if not slot.frames and index == 0:
                 slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)

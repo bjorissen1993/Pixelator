@@ -59,6 +59,16 @@ export interface SpiritSettings {
   notes: string;
 }
 
+export interface CompositionSettings {
+  fullBodySprite: boolean;
+  entireSilhouetteVisible: boolean;
+  preventCropping: boolean;
+  centerCharacter: boolean;
+  fitSafeMargins: boolean;
+  noPortraitCloseup: boolean;
+  showFullSpiritTail: boolean;
+}
+
 export interface PaletteSettings {
   colorCount: number;
   locked: boolean;
@@ -120,6 +130,7 @@ export interface GenerationDebug {
   paletteMode: string;
   usedReference: boolean;
   usedIpAdapter: boolean;
+  cropRetries?: number;
 }
 
 export interface SpriteAsset {
@@ -222,6 +233,7 @@ export interface CharacterProfile {
   externalProviderId?: string | null;
   externalCharacterId?: string | null;
   identityLock: IdentityLock;
+  composition: CompositionSettings;
   emotion: EmotionProfile;
   states: CharacterState[];
   pendingBase?: SpriteAsset | null;
@@ -236,6 +248,7 @@ export interface PromptLayers {
   masterPrompt: string;
   identity: string;
   hardConstraints?: string;
+  composition?: string;
   state: string;
   direction: string;
   expression: string;

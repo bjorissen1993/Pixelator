@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from models.character import EmotionProfile, IdentityLock, PaletteSettings, SpiritSettings
+from models.character import CompositionSettings, EmotionProfile, IdentityLock, PaletteSettings, SpiritSettings
 from models.enums import BodyTemplate, CameraAngle, DetailLevel, OutlineStyle, PaletteMode, ShadingStyle
 
 
@@ -25,4 +25,5 @@ class CharacterPatch(BaseModel):
     seedLocked: bool | None = None
     styleProfileId: str | None = None
     identityLock: IdentityLock | None = None
+    composition: CompositionSettings | None = None
     emotion: EmotionProfile | None = None

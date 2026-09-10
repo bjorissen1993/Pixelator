@@ -71,14 +71,17 @@ def hard_constraints(character: CharacterProfile) -> str:
                 "no legs",
                 "no boots",
                 "no feet",
-                "spectral lower body",
+                "spectral lower body fully visible",
+                "visible floating spirit tail",
                 "same proportions",
             ]
         )
     if "berwynn" in character.name.lower() or "berwynn" in character.slug.lower() or "berwynn" in character.masterPrompt.lower():
         parts.extend(
             [
-                "Berwynn identity lock: no armor, no legs, no boots, spectral lower body, same tunic, same beard, same proportions",
+                "Berwynn identity lock: no armor, no legs, no boots, spectral lower body, visible floating spirit tail, same tunic, same beard, same proportions",
             ]
         )
+    if character.composition.entireSilhouetteVisible:
+        parts.append("entire silhouette visible, nothing cut off by the frame")
     return ", ".join(parts)

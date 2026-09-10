@@ -1,6 +1,7 @@
 from models.character import CharacterProfile, CharacterState
 from models.enums import Direction, HeadVariant, LayerKind
 from models.generation import PromptLayers
+from prompts.composition import composition_constraints, composition_negative
 from prompts.direction import direction_prompt
 from prompts.expression import expression_prompt
 from prompts.global_style import global_style
@@ -19,7 +20,7 @@ def _join(parts: list[str]) -> str:
 
 
 def build_negative(character: CharacterProfile) -> str:
-    parts = [DEFAULT_NEGATIVE, character.negativePrompt]
+    parts = [DEFAULT_NEGATIVE, character.negativePrompt, composition_negative(character)]
     if character.spirit.enabled or character.spirit.noLegs:
         parts.append("human legs, boots, feet, armor, weapons unless requested, bipedal standing pose")
     return _join(parts)
@@ -38,6 +39,7 @@ def build_prompt(
     action: str = "",
     embed_negative: bool = True,
     extra_clauses: list[str] | None = None,
+    stronger_framing: bool = False,
 ) -> PromptLayers:
     visual = global_style(
         character.camera,
@@ -49,12 +51,14 @@ def build_prompt(
     )
     identity = identity_constraints(character)
     constraints = hard_constraints(character)
+    framing = composition_constraints(character, stronger=stronger_framing) if layer == "full" else ""
     layers = PromptLayers(
         globalStyle=visual,
         visualStyle=visual,
         masterPrompt=character.masterPrompt,
         identity=identity,
         hardConstraints=constraints,
+        composition=framing,
         state=state_prompt(state) if state else "neutral full-body identity pose, canonical reference stance",
         direction=direction_prompt(direction, character.camera, from_direction)
         if direction
@@ -88,6 +92,7 @@ def build_prompt(
             layers.direction,
             layers.state,
             layers.hardConstraints,
+            layers.composition,
             layers.expression,
             layers.override,
             *extras,
@@ -108,6 +113,9 @@ def build_pixellab_description(character: CharacterProfile, override: str = "") 
     if spirit.enabled or spirit.noLegs:
         parts.append(spirit.notes or "legless ghost, no legs, no boots, lower body fades into spectral mist, floating spirit tail")
     parts.append(hard_constraints(character))
+    framing = composition_constraints(character)
+    if framing:
+        parts.append(framing)
     if override.strip():
         parts.append(override.strip())
     return _join(parts)[:2000]

@@ -40,6 +40,16 @@ class SpiritSettings(BaseModel):
     notes: str = ""
 
 
+class CompositionSettings(BaseModel):
+    fullBodySprite: bool = True
+    entireSilhouetteVisible: bool = True
+    preventCropping: bool = True
+    centerCharacter: bool = True
+    fitSafeMargins: bool = True
+    noPortraitCloseup: bool = True
+    showFullSpiritTail: bool = True
+
+
 class PaletteSettings(BaseModel):
     colorCount: int = Field(default=20, ge=8, le=64)
     locked: bool = False
@@ -101,6 +111,7 @@ class GenerationDebug(BaseModel):
     paletteMode: str = ""
     usedReference: bool = False
     usedIpAdapter: bool = False
+    cropRetries: int = 0
 
 
 class SpriteAsset(BaseModel):
@@ -192,6 +203,7 @@ class CharacterProfile(BaseModel):
     externalProviderId: str | None = None
     externalCharacterId: str | None = None
     identityLock: IdentityLock = Field(default_factory=IdentityLock)
+    composition: CompositionSettings = Field(default_factory=CompositionSettings)
     emotion: EmotionProfile = Field(default_factory=EmotionProfile)
     states: list[CharacterState] = Field(default_factory=list)
     pendingBase: SpriteAsset | None = None

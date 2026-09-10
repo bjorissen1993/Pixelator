@@ -6,6 +6,7 @@ from domain.state_templates import template_by_id
 from models.character import (
     CharacterProfile,
     CharacterState,
+    CompositionSettings,
     DirectionSlot,
     EmotionProfile,
     HeadAnchor,
@@ -89,6 +90,15 @@ def berwynn_profile() -> CharacterProfile:
         bodyTemplate="custom",
         paletteMode="generated",
         identityLock=IdentityLock(),
+        composition=CompositionSettings(
+            fullBodySprite=True,
+            entireSilhouetteVisible=True,
+            preventCropping=True,
+            centerCharacter=True,
+            fitSafeMargins=True,
+            noPortraitCloseup=True,
+            showFullSpiritTail=True,
+        ),
         emotion=EmotionProfile(
             expressiveness="low",
             bodyMovement="subtle",

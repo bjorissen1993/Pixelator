@@ -1,9 +1,29 @@
 import { APPLY_MODES, DEFAULT_SPRITE_SIZES } from "@shared";
-import type { CharacterProfile, IdentityLock } from "@shared";
+import type { CharacterProfile, CompositionSettings, IdentityLock } from "@shared";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Area, Button, Field, Section, Select, SpritePreviewCard, TextInput, Toggle } from "./ui";
+
+const COMPOSITION_DEFAULTS: CompositionSettings = {
+  fullBodySprite: true,
+  entireSilhouetteVisible: true,
+  preventCropping: true,
+  centerCharacter: true,
+  fitSafeMargins: true,
+  noPortraitCloseup: true,
+  showFullSpiritTail: true,
+};
+
+const COMPOSITION_LABELS: Array<[keyof CompositionSettings, string]> = [
+  ["fullBodySprite", "Full body sprite"],
+  ["entireSilhouetteVisible", "Entire silhouette visible"],
+  ["preventCropping", "Prevent cropping"],
+  ["centerCharacter", "Center character on canvas"],
+  ["fitSafeMargins", "Fit within safe margins"],
+  ["noPortraitCloseup", "No portrait / no bust / no close-up"],
+  ["showFullSpiritTail", "For spirit characters: show full spirit tail"],
+];
 
 const LOCK_LABELS: Array<[keyof IdentityLock, string]> = [
   ["lockFace", "Face"],
@@ -20,7 +40,16 @@ export function CharacterScreen() {
   const { character, selectedStateId, selectedDirection, busy, generating, progress, run, applyResult, setCharacter } = useWorkspace();
   const [draft, setDraft] = useState<CharacterProfile | null>(character);
 
-  useEffect(() => setDraft(character), [character]);
+  useEffect(() => {
+    if (!character) {
+      setDraft(null);
+      return;
+    }
+    setDraft({
+      ...character,
+      composition: { ...COMPOSITION_DEFAULTS, ...character.composition },
+    });
+  }, [character]);
   if (!character || !draft) return null;
   const locked = generating || !!busy;
 
@@ -48,6 +77,7 @@ export function CharacterScreen() {
         shading: draft.shading,
         paletteMode: draft.paletteMode,
         bodyTemplate: draft.bodyTemplate,
+        composition: draft.composition,
       });
       setCharacter(saved);
     });
@@ -144,6 +174,26 @@ export function CharacterScreen() {
         </div>
       </Section>
 
+      <Section title="Composition">
+        <p className="hint">
+          Framing controls for game-ready full-body sprites. Prevent cropping retries once with a stronger framing
+          prompt when the result still touches the canvas edge.
+        </p>
+        <div className="lock-grid">
+          {COMPOSITION_LABELS.map(([key, label]) => (
+            <Toggle
+              key={key}
+              label={label}
+              checked={draft.composition?.[key] ?? true}
+              onChange={(value) => {
+                const composition = { ...draft.composition, [key]: value };
+                setDraft({ ...draft, composition });
+              }}
+            />
+          ))}
+        </div>
+      </Section>
+
       <Section title="Sprite settings">
         <div className="form-grid">
           <Field label="Camera">
@@ -216,7 +266,11 @@ export function CharacterScreen() {
           label="Spirit form"
           checked={draft.spirit.enabled}
           onChange={(enabled) =>
-            set("spirit", { ...draft.spirit, enabled, noLegs: enabled, spectralTail: enabled, mistFade: enabled })
+            setDraft({
+              ...draft,
+              spirit: { ...draft.spirit, enabled, noLegs: enabled, spectralTail: enabled, mistFade: enabled },
+              composition: { ...draft.composition, showFullSpiritTail: enabled ? true : draft.composition.showFullSpiritTail },
+            })
           }
         />
         <Field label="Spirit notes">
@@ -303,6 +357,13 @@ export function CharacterScreen() {
             }
           />
         </div>
+        {character.pendingBase?.validation?.warnings?.length ? (
+          <ul className="quality-warnings">
+            {character.pendingBase.validation.warnings.map((warning) => (
+              <li key={warning.code}>{warning.message}</li>
+            ))}
+          </ul>
+        ) : null}
       </Section>
     </div>
   );

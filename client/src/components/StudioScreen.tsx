@@ -55,6 +55,7 @@ function DebugBlock({ asset }: { asset?: SpriteAsset }) {
         <div><dt>reference</dt><dd>{debug.usedReference ? `${debug.referenceDirection || "base"} ${debug.referenceAssetId || ""}` : "none"}</dd></div>
         <div><dt>working / target</dt><dd>{debug.workingResolution ?? "—"} → {debug.targetResolution ?? "—"}</dd></div>
         <div><dt>palette</dt><dd>{debug.paletteMode || "—"}</dd></div>
+        <div><dt>crop retries</dt><dd>{debug.cropRetries ?? 0}</dd></div>
         <div><dt>prompt</dt><dd>{debug.prompt || "—"}</dd></div>
         <div><dt>negative</dt><dd>{debug.negativePrompt || "—"}</dd></div>
       </dl>

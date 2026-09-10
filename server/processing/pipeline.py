@@ -64,9 +64,46 @@ def flatten_alpha(image: Image.Image, cutoff: int = ALPHA_CUTOFF) -> Image.Image
     return rgba
 
 
-def crop_alpha(image: Image.Image) -> Image.Image:
+def crop_alpha(image: Image.Image, pad: int = 0) -> Image.Image:
     bbox = image.getchannel("A").getbbox()
-    return image.crop(bbox) if bbox else image
+    if not bbox:
+        return image
+    if pad:
+        left, top, right, bottom = bbox
+        left = max(0, left - pad)
+        top = max(0, top - pad)
+        right = min(image.width, right + pad)
+        bottom = min(image.height, bottom + pad)
+        bbox = (left, top, right, bottom)
+    return image.crop(bbox)
+
+
+def fit_to_canvas(
+    image: Image.Image,
+    size: int,
+    resample: Image.Resampling | None = None,
+    margin: float = 0.10,
+    center: bool = True,
+) -> Image.Image:
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    cropped = crop_alpha(image.convert("RGBA"))
+    pad = max(2, int(round(size * max(0.04, min(margin, 0.22)))))
+    inner = max(1, size - pad * 2)
+    ratio = min(inner / max(1, cropped.width), inner / max(1, cropped.height))
+    target = (max(1, int(cropped.width * ratio)), max(1, int(cropped.height * ratio)))
+    shrinking = target[0] < cropped.width or target[1] < cropped.height
+    if resample is None:
+        resample = Image.Resampling.BOX if shrinking else Image.Resampling.NEAREST
+    fitted = cropped.resize(target, resample)
+    x = (size - fitted.width) // 2
+    if center:
+        y = (size - fitted.height) // 2
+    else:
+        y = size - pad - fitted.height
+    x = max(pad, min(x, size - pad - fitted.width))
+    y = max(pad, min(y, size - pad - fitted.height))
+    canvas.alpha_composite(fitted, (x, y))
+    return canvas
 
 
 def _opaque_fill_color(image: Image.Image) -> tuple[int, int, int]:
@@ -197,24 +234,6 @@ def estimate_head_anchor(image: Image.Image, size: int) -> HeadAnchor:
     )
 
 
-def fit_to_canvas(image: Image.Image, size: int, resample: Image.Resampling | None = None) -> Image.Image:
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    cropped = crop_alpha(image.convert("RGBA"))
-    max_w = max(1, int(size * 0.88))
-    max_h = max(1, int(size * 0.94))
-    ratio = min(max_w / max(1, cropped.width), max_h / max(1, cropped.height))
-    target = (max(1, int(cropped.width * ratio)), max(1, int(cropped.height * ratio)))
-    shrinking = target[0] < cropped.width or target[1] < cropped.height
-    if resample is None:
-        # Intermediate shrink uses BOX (pixel average). Final sprite reduction never uses Lanczos.
-        resample = Image.Resampling.BOX if shrinking else Image.Resampling.NEAREST
-    fitted = cropped.resize(target, resample)
-    x = (size - fitted.width) // 2
-    y = size - fitted.height
-    canvas.alpha_composite(fitted, (x, y))
-    return canvas
-
-
 def reduce_palette(image: Image.Image, colors: int) -> Image.Image:
     rgba = flatten_alpha(image)
     alpha = rgba.getchannel("A")
@@ -288,9 +307,24 @@ class PixelPipeline:
         palette_mode: str = "unlocked",
         reference: Image.Image | None = None,
         direction=None,
+        fit_margin: float = 0.10,
+        center: bool = True,
+        spirit_form: bool = False,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
         if native:
-            return self.process_native(image, size, colors, on_step, locked_palette, palette_mode, reference, direction)
+            return self.process_native(
+                image,
+                size,
+                colors,
+                on_step,
+                locked_palette,
+                palette_mode,
+                reference,
+                direction,
+                fit_margin=fit_margin,
+                center=center,
+                spirit_form=spirit_form,
+            )
         if on_step:
             on_step("removing background")
         rgba = _prepare_source(remove_background(image, remove_bg))
@@ -299,10 +333,10 @@ class PixelPipeline:
         if on_step:
             on_step("fitting working canvas")
         if source_size <= size * 2 and work_size <= size:
-            work = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST)
+            work = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
             sprite = _apply_palette(work, colors, locked_palette, palette_mode)
         else:
-            work = fit_to_canvas(rgba, work_size)
+            work = fit_to_canvas(rgba, work_size, margin=fit_margin, center=center)
             if on_step:
                 on_step("locking palette")
             work = _apply_palette(work, colors, locked_palette, palette_mode)
@@ -312,6 +346,7 @@ class PixelPipeline:
                 sprite = work
             else:
                 sprite = block_mode_downscale(work, size)
+                sprite = fit_to_canvas(sprite, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
         sprite = flatten_alpha(sprite)
         if cleanup:
             if on_step:
@@ -323,6 +358,7 @@ class PixelPipeline:
             on_step("applying outline")
         sprite = apply_outline(sprite, outline)
         sprite = flatten_alpha(sprite, cutoff=16)
+        sprite = fit_to_canvas(sprite, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
         validation = validate_sprite(
             sprite,
@@ -332,6 +368,7 @@ class PixelPipeline:
             reference=reference,
             palette=locked_palette,
             direction=direction,
+            spirit_form=spirit_form,
         )
         return sprite, preview, validation
 
@@ -345,19 +382,27 @@ class PixelPipeline:
         palette_mode: str = "unlocked",
         reference: Image.Image | None = None,
         direction=None,
+        fit_margin: float = 0.10,
+        center: bool = True,
+        spirit_form: bool = False,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
         if on_step:
             on_step("fitting native pixel sprite")
         rgba = flatten_alpha(image.convert("RGBA"), cutoff=32)
-        if rgba.size != (size, size):
-            sprite = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST)
-        else:
-            sprite = rgba
+        sprite = fit_to_canvas(rgba, size, resample=Image.Resampling.NEAREST, margin=fit_margin, center=center)
         sprite = flatten_alpha(sprite, cutoff=32)
         if locked_palette and palette_mode in ("strict", "locked", "soft", "custom", "project"):
             sprite = map_to_palette(sprite, locked_palette, "soft" if palette_mode == "soft" else "strict")
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
         validation = validate_sprite(
-            sprite, size, colors, source_size=size, reference=reference, palette=locked_palette, direction=direction
+            sprite,
+            size,
+            colors,
+            source_size=size,
+            reference=reference,
+            palette=locked_palette,
+            direction=direction,
+            spirit_form=spirit_form,
         )
         return sprite, preview, validation
+

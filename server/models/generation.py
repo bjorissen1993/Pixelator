@@ -10,6 +10,7 @@ class PromptLayers(BaseModel):
     masterPrompt: str = ""
     identity: str = ""
     hardConstraints: str = ""
+    composition: str = ""
     state: str = ""
     direction: str = ""
     expression: str = ""

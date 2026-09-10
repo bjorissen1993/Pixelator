@@ -11,12 +11,14 @@ def _metrics(image: Image.Image) -> dict:
     pixels = image.convert("RGBA").load()
     opaque = 0
     unique: set[tuple[int, int, int]] = set()
-    touches_edge = False
+    touches_left = touches_right = touches_top = touches_bottom = False
     mass_x = 0.0
     mass_y = 0.0
     min_x, min_y, max_x, max_y = width, height, -1, -1
     labels = [[0] * width for _ in range(height)]
     blob_id = 0
+    top_band = 0
+    bottom_band = 0
     for y in range(height):
         for x in range(width):
             r, g, b, a = pixels[x, y]
@@ -28,8 +30,18 @@ def _metrics(image: Image.Image) -> dict:
             mass_y += y
             min_x, min_y = min(min_x, x), min(min_y, y)
             max_x, max_y = max(max_x, x), max(max_y, y)
-            if x == 0 or y == 0 or x == width - 1 or y == height - 1:
-                touches_edge = True
+            if x == 0:
+                touches_left = True
+            if x == width - 1:
+                touches_right = True
+            if y == 0:
+                touches_top = True
+            if y == height - 1:
+                touches_bottom = True
+            if y < height * 0.45:
+                top_band += 1
+            if y >= height * 0.70:
+                bottom_band += 1
             if labels[y][x] == 0:
                 blob_id += 1
                 stack = [(x, y)]
@@ -59,7 +71,11 @@ def _metrics(image: Image.Image) -> dict:
         "opaque": opaque,
         "occupancy": occupancy,
         "unique": unique,
-        "touches_edge": touches_edge,
+        "touches_edge": touches_left or touches_right or touches_top or touches_bottom,
+        "touches_left": touches_left,
+        "touches_right": touches_right,
+        "touches_top": touches_top,
+        "touches_bottom": touches_bottom,
         "height_ratio": bbox_h / height,
         "width_ratio": bbox_w / width,
         "center_x": center_x,
@@ -67,6 +83,8 @@ def _metrics(image: Image.Image) -> dict:
         "blobs": blob_id,
         "left_mass": left_mass,
         "right_mass": right_mass,
+        "top_band": top_band,
+        "bottom_band": bottom_band,
     }
 
 
@@ -104,6 +122,7 @@ def validate_sprite(
     reference: Image.Image | None = None,
     palette: list[tuple[int, int, int]] | None = None,
     direction: Direction | None = None,
+    spirit_form: bool = False,
 ) -> QualityValidation:
     warnings: list[QualityWarning] = []
     width, height = image.size
@@ -124,8 +143,14 @@ def validate_sprite(
         warnings.append(QualityWarning(code="too_much_transparency", message="Sprite is almost empty", severity="warning"))
     elif occupancy < 0.08:
         warnings.append(QualityWarning(code="sprite_too_small", message="Sprite occupies too little of the canvas", severity="warning"))
-    if occupancy > 0.78 or metrics["height_ratio"] > 0.98:
-        warnings.append(QualityWarning(code="sprite_too_large", message="Sprite is too large or cropped on the canvas", severity="warning"))
+    if occupancy > 0.72 or metrics["height_ratio"] > 0.92 or metrics["width_ratio"] > 0.92:
+        warnings.append(
+            QualityWarning(
+                code="too_large_for_canvas",
+                message=f"Character too large for {expected_size}x{expected_size}",
+                severity="warning",
+            )
+        )
     if len(metrics["unique"]) > palette_limit:
         warnings.append(
             QualityWarning(
@@ -135,7 +160,56 @@ def validate_sprite(
             )
         )
     if metrics["touches_edge"]:
-        warnings.append(QualityWarning(code="touches_edges", message="Opaque pixels touch the canvas edge", severity="warning"))
+        edges = [
+            name
+            for name, hit in (
+                ("top", metrics["touches_top"]),
+                ("bottom", metrics["touches_bottom"]),
+                ("left", metrics["touches_left"]),
+                ("right", metrics["touches_right"]),
+            )
+            if hit
+        ]
+        warnings.append(
+            QualityWarning(
+                code="touches_edges",
+                message=f"Sprite touches canvas edge ({', '.join(edges)})",
+                severity="warning",
+            )
+        )
+        warnings.append(
+            QualityWarning(
+                code="likely_cropped",
+                message="Likely cropped sprite",
+                severity="warning",
+            )
+        )
+        warnings.append(
+            QualityWarning(
+                code="silhouette_incomplete",
+                message="Silhouette incomplete",
+                severity="warning",
+            )
+        )
+    if metrics["opaque"]:
+        top_share = metrics["top_band"] / metrics["opaque"]
+        bottom_share = metrics["bottom_band"] / metrics["opaque"]
+        if top_share >= 0.78 and bottom_share <= 0.10:
+            warnings.append(
+                QualityWarning(
+                    code="likely_portrait",
+                    message="Likely portrait composition",
+                    severity="warning",
+                )
+            )
+        if spirit_form and bottom_share < 0.08:
+            warnings.append(
+                QualityWarning(
+                    code="lower_spirit_body_missing",
+                    message="Lower spirit body missing",
+                    severity="warning",
+                )
+            )
     if source_size and source_size >= expected_size * 4:
         warnings.append(
             QualityWarning(
