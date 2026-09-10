@@ -90,6 +90,8 @@ export function StudioScreen() {
   const pendingInvalid = invalidBaseReasons(character.pendingBase?.validation);
   const acceptDisabled = locked || !canAcceptAsBase(character.pendingBase);
   const acceptedInvalid = invalidBaseReasons(character.acceptedBase?.sprite?.validation);
+  const southSlot = state?.directions.find((item) => item.direction === "S");
+  const refAsset = character.acceptedBase?.sprite ?? character.pendingBase ?? southSlot?.frames[0];
 
   const generateEight = () => {
     if (!state) return;
@@ -116,7 +118,7 @@ export function StudioScreen() {
             <p>
               {character.species} · {character.camera} · {character.outline} outline · {character.shading} shading ·{" "}
               {character.spriteSize}px
-              {character.acceptedBase ? " · identity locked" : " · accept a base to condition directions"}
+              {character.acceptedBase ? " · identity locked" : " · Generate All starts with South, then the other facings"}
             </p>
           </div>
           <div className="chip-row">
@@ -128,7 +130,13 @@ export function StudioScreen() {
             </Button>
             <Button
               disabled={locked || !state}
-              title={!character.acceptedBase ? "Accept a South base first" : acceptedInvalid.length ? "Accepted base failed full-body validation" : undefined}
+              title={
+                acceptedInvalid.length
+                  ? "Accepted base failed full-body validation"
+                  : character.acceptedBase
+                    ? "Generate all 8 directions from the accepted base"
+                    : "Generate South first, then the other 7 directions"
+              }
               onClick={generateEight}
             >
               Generate All Directions
@@ -216,8 +224,9 @@ export function StudioScreen() {
             <h2>{state ? `${state.name} directions` : "Directions"}</h2>
           </header>
           <p className="hint">
-            Center is the accepted identity reference. Generate creates South (S) as the pending base.
-            Generate All Directions fills the remaining facings. Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
+            Center is the accepted identity, or South if no base is accepted yet.
+            Generate creates South (S). Generate All Directions makes South first when needed, then the other facings.
+            Order: {EXPORT_DIRECTION_ORDER.join(" → ")}.
           </p>
           <div className="compass studio-compass">
             {GRID.map((cell, index) => {
@@ -225,7 +234,7 @@ export function StudioScreen() {
                 return (
                   <div key="ref" className="compass-core ref-cell">
                     <span>REF</span>
-                    <PixelImage asset={character.acceptedBase?.sprite} empty="No base" size={character.spriteSize} scale={3} />
+                    <PixelImage asset={refAsset} empty="No base" size={character.spriteSize} scale={3} />
                   </div>
                 );
               }
@@ -373,7 +382,7 @@ export function StudioScreen() {
                 </Button>
                 <Button
                   variant="secondary"
-                  disabled={locked || !character.acceptedBase || selectedSlot.locked}
+                  disabled={locked || selectedSlot.locked}
                   onClick={() =>
                     run(`Regenerating ${selectedDirection}`, async () => {
                       const result = await api.generateDirection(character.id, { stateId: state.id, direction: selectedDirection });

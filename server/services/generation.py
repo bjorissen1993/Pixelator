@@ -1146,19 +1146,16 @@ def _save_direction_image(
 
 def require_direction_set(character_id: str, state_id: str | None = None) -> tuple[CharacterProfile, str]:
     character = character_service.get_character(character_id)
-    if character.acceptedBase is None:
-        raise ValueError(
-            "Accept a base character before generating all directions. Use Generate for the South facing, then Accept as Base."
-        )
-    accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
-    character.acceptedBase.sprite.validation = accepted_validation
-    reasons = invalid_base_reasons(accepted_validation)
-    if reasons:
-        character_service.save_character(character)
-        raise ValueError(
-            "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
-            + " ".join(reasons)
-        )
+    if character.acceptedBase is not None:
+        accepted_validation = _revalidate_base_asset(character, character.acceptedBase.sprite)
+        character.acceptedBase.sprite.validation = accepted_validation
+        reasons = invalid_base_reasons(accepted_validation)
+        if reasons:
+            character_service.save_character(character)
+            raise ValueError(
+                "Accepted base is not a valid full-body sprite and cannot be used for 8-direction generation. "
+                + " ".join(reasons)
+            )
     resolved = state_id or (character.states[0].id if character.states else "")
     if not resolved:
         raise ValueError("Create a state before generating directions")
@@ -1194,8 +1191,23 @@ def generate_direction_set(
     skippable = lambda slot: slot.locked or slot.status in ("accepted", "locked")
     total = len([d for d in wanted if not skippable(character_service.find_slot(state, d))])
     done = 0
+    generated_south = False
+    if character.acceptedBase is None and "S" in wanted:
+        south = character_service.find_slot(state, "S")
+        if not skippable(south):
+            log_generation("generate_all_directions_south_first", character, state=state_id, direction="S")
+            if job_id:
+                jobs.set_progress(job_id, 1, total or 1, "S (south first)", "generating")
+            last = generate_base(character_id, seed=seed, override=override)
+            generated_south = True
+            done += 1
+            character = character_service.get_character(character_id)
+            state = character_service.find_state(character, state_id)
+            character_service.ensure_slots(state, character.spriteSize)
     if native_images:
         for direction in wanted:
+            if direction == "S" and generated_south:
+                continue
             slot = character_service.find_slot(state, direction)
             if skippable(slot):
                 continue
@@ -1213,6 +1225,8 @@ def generate_direction_set(
         last["character"] = character
         return last
     for direction in wanted:
+        if direction == "S" and generated_south:
+            continue
         character = character_service.get_character(character_id)
         state = character_service.find_state(character, state_id)
         slot = character_service.find_slot(state, direction)
@@ -1228,7 +1242,7 @@ def generate_direction_set(
             use_reference=use_reference,
             seed=None if seed is None else seed + done,
             override=override,
-            from_direction=None,
+            from_direction="S",
             strength=strength,
             job_id=job_id,
             candidate_count=candidate_count,
