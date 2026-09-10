@@ -1,4 +1,4 @@
-import type { CharacterProfile, Direction, GenerationResult, ProviderInfo, StateTemplate } from "@shared";
+import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, ProviderInfo, StateTemplate } from "@shared";
 
 function formatDetail(detail: unknown): string {
   if (typeof detail === "string") return detail;
@@ -67,6 +67,9 @@ export const api = {
   clearReference: (id: string) => request<CharacterProfile>(`/api/characters/${id}/clear-reference`, { method: "POST", body: "{}" }),
   generateVariation: (id: string) =>
     request<GenerationResult>(`/api/characters/${id}/generate-variation`, { method: "POST", body: "{}" }),
+  discardPending: (id: string) =>
+    request<CharacterProfile>(`/api/characters/${id}/discard-pending`, { method: "POST", body: "{}" }),
+  generationProgress: (id: string) => request<GenerationProgress>(`/api/characters/${id}/generation-progress`),
   generateState: (id: string, stateId: string, body: Record<string, unknown> = {}) =>
     request<GenerationResult>(`/api/characters/${id}/generate/state/${stateId}`, { method: "POST", body: JSON.stringify(body) }),
   generateDirection: (id: string, body: { stateId: string; direction: Direction; frameIndex?: number; layer?: string }) =>

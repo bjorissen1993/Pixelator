@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { SECTIONS, useWorkspace } from "../context/WorkspaceContext";
-import { Banner, Button, TextInput } from "./ui";
+import { GenerationStatus, Button, TextInput } from "./ui";
 import { CharacterScreen } from "./CharacterScreen";
 import { DirectionsScreen } from "./DirectionsScreen";
 import { EmotionScreen } from "./EmotionScreen";
@@ -20,6 +20,8 @@ export function Workspace() {
     refresh,
     run,
     busy,
+    generating,
+    progress,
     error,
     provider,
   } = useWorkspace();
@@ -47,6 +49,7 @@ export function Workspace() {
           <TextInput placeholder="New character name" value={newName} onChange={(event) => setNewName(event.target.value)} />
           <Button
             variant="secondary"
+            disabled={!!busy}
             onClick={() =>
               run("Creating character", async () => {
                 if (!newName.trim()) return;
@@ -84,7 +87,7 @@ export function Workspace() {
           </div>
           <div className="badge">{character?.spriteSize ?? 48}×{character?.spriteSize ?? 48}</div>
         </header>
-        <Banner error={error} busy={busy} />
+        <GenerationStatus error={error} busy={busy} generating={generating} progress={progress} />
         <div className="content">
           {section === "character" && <CharacterScreen />}
           {section === "states" && <StatesScreen />}

@@ -11,9 +11,11 @@ from models.generation import PromptLayers
 from persistence.store import asset_path
 from processing.layers import split_head_body
 from processing.pipeline import PixelPipeline, estimate_head_anchor, extract_palette
+from processing.preview import make_preview, preview_relative
 from prompts.builder import build_prompt
 from providers.registry import get_provider
 from services import characters as character_service
+from services import progress
 
 pipeline = PixelPipeline()
 
@@ -65,6 +67,7 @@ def process_generated(character: CharacterProfile, image: Image.Image):
         character.outline,
         config.ENABLE_BG_REMOVAL,
         locked_palette(character),
+        on_step=lambda step: progress.set_step(character.id, step),
     )
 
 
@@ -77,12 +80,17 @@ def make_asset(
     kind: str,
     validation,
     head: HeadAnchor | None,
+    preview: Image.Image | None = None,
 ) -> SpriteAsset:
+    progress.set_step(character.id, "saving preview")
     path = save_image(character.slug, relative, image)
+    preview_image = preview if preview is not None else make_preview(image)
+    preview_path = save_image(character.slug, preview_relative(relative), preview_image)
     return SpriteAsset(
         id=new_id(),
         kind=kind,  # type: ignore[arg-type]
         path=path,
+        previewPath=preview_path,
         width=image.width,
         height=image.height,
         seed=seed,
@@ -107,6 +115,7 @@ def generate_image(
     seed: int | None,
     strength: float = 0.42,
 ):
+    progress.set_step(character.id, "generating source image")
     provider = get_provider()
     ref = reference_image(character) if use_reference else None
     used_reference = False
@@ -115,33 +124,58 @@ def generate_image(
         used_reference = True
     else:
         generated = provider.generate_direction(prompt, seed=seed)
-    sprite, _preview, validation = process_generated(character, generated.image)
-    return generated, sprite, validation, used_reference
+    sprite, preview, validation = process_generated(character, generated.image)
+    return generated, sprite, preview, validation, used_reference
+
+
+def _track(character_id: str, label: str):
+    nested = progress.is_active(character_id)
+    if not nested:
+        progress.start(character_id, label)
+    return nested
 
 
 def generate_base(character_id: str, seed: int | None = None, override: str = "") -> dict:
-    character = character_service.get_character(character_id)
-    prompt = build_prompt(character, override=override)
-    generated, sprite, validation, used_reference = generate_image(
-        character, prompt, use_reference=False, seed=seed or character.seed
+    nested = _track(character_id, "Generating base")
+    try:
+        character = character_service.get_character(character_id)
+        prompt = build_prompt(character, override=override)
+        generated, sprite, preview, validation, used_reference = generate_image(
+            character, prompt, use_reference=False, seed=seed or character.seed
+        )
+        anchor = estimate_head_anchor(sprite, character.spriteSize)
+        asset = make_asset(
+            character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, anchor, preview
+        )
+        character.pendingBase = asset
+        character_service.save_character(character)
+        return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    finally:
+        if not nested:
+            progress.finish(character_id)
+
+
+def _copy_pending_to_accepted(character: CharacterProfile, lock_palette: bool) -> CharacterProfile:
+    pending = character.pendingBase
+    if pending is None:
+        raise ValueError("No pending sprite to promote")
+    sprite_image = load_image(pending.path)
+    if sprite_image is None:
+        raise ValueError("Pending sprite file is missing")
+    preview_image = load_image(pending.previewPath) if pending.previewPath else None
+    if preview_image is None:
+        preview_image = make_preview(sprite_image)
+    accepted_path = save_image(character.slug, "base/accepted.png", sprite_image)
+    accepted_preview = save_image(character.slug, "base/accepted-preview.png", preview_image)
+    accepted_asset = pending.model_copy(
+        update={
+            "id": new_id(),
+            "path": accepted_path,
+            "previewPath": accepted_preview,
+            "accepted": True,
+            "createdAt": utc_now(),
+        }
     )
-    anchor = estimate_head_anchor(sprite, character.spriteSize)
-    asset = make_asset(character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, anchor)
-    character.pendingBase = asset
-    character_service.save_character(character)
-    return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
-
-
-def accept_base(character_id: str, lock_palette: bool = True) -> CharacterProfile:
-    character = character_service.get_character(character_id)
-    source = character.pendingBase or (character.acceptedBase.sprite if character.acceptedBase else None)
-    if source is None:
-        raise ValueError("No pending or existing base sprite to accept")
-    image = load_image(source.path)
-    if image is None:
-        raise ValueError("Base sprite file is missing")
-    accepted_path = save_image(character.slug, "base/accepted.png", image)
-    accepted_asset = source.model_copy(update={"path": accepted_path, "accepted": True, "createdAt": utc_now()})
     character.acceptedBase = AcceptedBase(
         sprite=accepted_asset,
         acceptedAt=utc_now(),
@@ -149,37 +183,55 @@ def accept_base(character_id: str, lock_palette: bool = True) -> CharacterProfil
         prompt=accepted_asset.prompt,
     )
     if lock_palette:
-        palette = extract_palette(image, character.palette.colorCount)
+        palette = extract_palette(sprite_image, character.palette.colorCount)
         character.palette.colors = [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette]
         character.palette.locked = True
         character.identityLock.lockPalette = True
     return character_service.save_character(character)
 
 
+def accept_base(character_id: str, lock_palette: bool = True) -> CharacterProfile:
+    character = character_service.get_character(character_id)
+    return _copy_pending_to_accepted(character, lock_palette)
+
+
 def replace_base(character_id: str) -> CharacterProfile:
-    return accept_base(character_id, lock_palette=True)
+    character = character_service.get_character(character_id)
+    return _copy_pending_to_accepted(character, lock_palette=True)
 
 
 def clear_reference(character_id: str) -> CharacterProfile:
     character = character_service.get_character(character_id)
     character.acceptedBase = None
-    character.palette.locked = False
+    return character_service.save_character(character)
+
+
+def discard_pending(character_id: str) -> CharacterProfile:
+    character = character_service.get_character(character_id)
+    character.pendingBase = None
     return character_service.save_character(character)
 
 
 def generate_variation(character_id: str, seed: int | None = None, override: str = "") -> dict:
-    character = character_service.get_character(character_id)
-    if character.acceptedBase is None:
-        raise ValueError("Accept a base character before generating a variation")
-    prompt = build_prompt(character, override=override or "subtle identity-preserving variation")
-    generated, sprite, validation, used_reference = generate_image(
-        character, prompt, use_reference=True, seed=seed or character.seed, strength=0.35
-    )
-    anchor = estimate_head_anchor(sprite, character.spriteSize)
-    asset = make_asset(character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, anchor)
-    character.pendingBase = asset
-    character_service.save_character(character)
-    return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    nested = _track(character_id, "Generating variation")
+    try:
+        character = character_service.get_character(character_id)
+        if character.acceptedBase is None:
+            raise ValueError("Accept a base character before generating a variation")
+        prompt = build_prompt(character, override=override or "subtle identity-preserving variation")
+        generated, sprite, preview, validation, used_reference = generate_image(
+            character, prompt, use_reference=True, seed=seed or character.seed, strength=0.35
+        )
+        anchor = estimate_head_anchor(sprite, character.spriteSize)
+        asset = make_asset(
+            character, sprite, "base/pending.png", prompt.final, generated.seed, "full", validation, anchor, preview
+        )
+        character.pendingBase = asset
+        character_service.save_character(character)
+        return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def generate_direction(
@@ -192,58 +244,65 @@ def generate_direction(
     seed: int | None = None,
     override: str = "",
 ) -> dict:
-    character = character_service.get_character(character_id)
-    state = character_service.find_state(character, state_id)
-    character_service.ensure_slots(state, character.spriteSize)
-    slot = character_service.find_slot(state, direction)
-    prompt = build_prompt(
-        character,
-        state=state,
-        direction=direction,
-        override=override,
-        layer=layer,
-        frame_index=frame_index,
-        frame_count=state.frameCount,
-    )
-    generated, sprite, validation, used_reference = generate_image(
-        character, prompt, use_reference=use_reference, seed=seed or character.seed
-    )
-    if not slot.frames:
-        slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
-    relative = f"states/{state.id}/{direction}/{layer}_frame_{frame_index:02d}.png"
-    asset = make_asset(character, sprite, relative, prompt.final, generated.seed, layer, validation, slot.headAnchor)
-    if layer == "full":
-        while len(slot.frames) <= frame_index:
-            slot.frames.append(asset)
-        slot.frames[frame_index] = asset
-        if state.headSeparated:
-            head, body = split_head_body(sprite, slot.headAnchor)
-            slot.head = make_asset(
-                character,
-                head,
-                f"states/{state.id}/{direction}/head.png",
-                prompt.final,
-                generated.seed,
-                "head",
-                validation,
-                slot.headAnchor,
-            )
-            slot.body = make_asset(
-                character,
-                body,
-                f"states/{state.id}/{direction}/body.png",
-                prompt.final,
-                generated.seed,
-                "body",
-                validation,
-                slot.headAnchor,
-            )
-    elif layer == "head":
-        slot.head = asset
-    elif layer == "body":
-        slot.body = asset
-    character_service.save_character(character)
-    return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    nested = _track(character_id, "Generating direction")
+    try:
+        character = character_service.get_character(character_id)
+        state = character_service.find_state(character, state_id)
+        character_service.ensure_slots(state, character.spriteSize)
+        slot = character_service.find_slot(state, direction)
+        prompt = build_prompt(
+            character,
+            state=state,
+            direction=direction,
+            override=override,
+            layer=layer,
+            frame_index=frame_index,
+            frame_count=state.frameCount,
+        )
+        generated, sprite, preview, validation, used_reference = generate_image(
+            character, prompt, use_reference=use_reference, seed=seed or character.seed
+        )
+        if not slot.frames:
+            slot.headAnchor = estimate_head_anchor(sprite, character.spriteSize)
+        relative = f"states/{state.id}/{direction}/{layer}_frame_{frame_index:02d}.png"
+        asset = make_asset(
+            character, sprite, relative, prompt.final, generated.seed, layer, validation, slot.headAnchor, preview
+        )
+        if layer == "full":
+            while len(slot.frames) <= frame_index:
+                slot.frames.append(asset)
+            slot.frames[frame_index] = asset
+            if state.headSeparated:
+                head, body = split_head_body(sprite, slot.headAnchor)
+                slot.head = make_asset(
+                    character,
+                    head,
+                    f"states/{state.id}/{direction}/head.png",
+                    prompt.final,
+                    generated.seed,
+                    "head",
+                    validation,
+                    slot.headAnchor,
+                )
+                slot.body = make_asset(
+                    character,
+                    body,
+                    f"states/{state.id}/{direction}/body.png",
+                    prompt.final,
+                    generated.seed,
+                    "body",
+                    validation,
+                    slot.headAnchor,
+                )
+        elif layer == "head":
+            slot.head = asset
+        elif layer == "body":
+            slot.body = asset
+        character_service.save_character(character)
+        return {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def generate_state(
@@ -253,42 +312,57 @@ def generate_state(
     seed: int | None = None,
     override: str = "",
 ) -> dict:
-    character = character_service.get_character(character_id)
-    state = character_service.find_state(character, state_id)
-    last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
-    for direction in state.selectedDirections:
-        for frame_index in range(state.frameCount):
-            last = generate_direction(
-                character_id,
-                state_id,
-                direction,
-                frame_index=frame_index,
-                use_reference=use_reference,
-                seed=None if seed is None else seed + frame_index,
-                override=override,
-            )
-    return last
+    nested = _track(character_id, "Generating state")
+    try:
+        character = character_service.get_character(character_id)
+        state = character_service.find_state(character, state_id)
+        last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
+        for direction in state.selectedDirections:
+            for frame_index in range(state.frameCount):
+                last = generate_direction(
+                    character_id,
+                    state_id,
+                    direction,
+                    frame_index=frame_index,
+                    use_reference=use_reference,
+                    seed=None if seed is None else seed + frame_index,
+                    override=override,
+                )
+        return last
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def generate_missing_directions(character_id: str, state_id: str, use_reference: bool = True) -> dict:
-    character = character_service.get_character(character_id)
-    state = character_service.find_state(character, state_id)
-    last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
-    for direction in state.selectedDirections:
-        slot = character_service.find_slot(state, direction)
-        for frame_index in range(state.frameCount):
-            if frame_index < len(slot.frames) and slot.frames[frame_index].path:
-                continue
-            last = generate_direction(character_id, state_id, direction, frame_index, use_reference=use_reference)
-    return last
+    nested = _track(character_id, "Generating missing directions")
+    try:
+        character = character_service.get_character(character_id)
+        state = character_service.find_state(character, state_id)
+        last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
+        for direction in state.selectedDirections:
+            slot = character_service.find_slot(state, direction)
+            for frame_index in range(state.frameCount):
+                if frame_index < len(slot.frames) and slot.frames[frame_index].path:
+                    continue
+                last = generate_direction(character_id, state_id, direction, frame_index, use_reference=use_reference)
+        return last
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def generate_all_states(character_id: str, use_reference: bool = True) -> dict:
-    character = character_service.get_character(character_id)
-    last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
-    for state in character.states:
-        last = generate_state(character_id, state.id, use_reference=use_reference)
-    return last
+    nested = _track(character_id, "Generating all states")
+    try:
+        character = character_service.get_character(character_id)
+        last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
+        for state in character.states:
+            last = generate_state(character_id, state.id, use_reference=use_reference)
+        return last
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def generate_head_variants(
@@ -298,42 +372,49 @@ def generate_head_variants(
     variants: list[HeadVariant] | None = None,
     use_reference: bool = True,
 ) -> dict:
-    character = character_service.get_character(character_id)
-    state = character_service.find_state(character, state_id)
-    slot = character_service.find_slot(state, direction)
-    wanted = variants or list(HEAD_VARIANTS)
-    source = None
-    if slot.frames:
-        source = load_image(slot.frames[0].path)
-    elif character.acceptedBase:
-        source = load_image(character.acceptedBase.sprite.path)
-    last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
-    for variant in wanted:
-        prompt = build_prompt(character, state=state, direction=direction, layer="head", head_variant=variant)
-        provider = get_provider()
-        used_reference = False
-        if source is not None and provider.info.supportsReference and use_reference:
-            head_layer, _body = split_head_body(source, slot.headAnchor)
-            generated = provider.generate_from_reference(prompt, head_layer, seed=character.seed, strength=0.38)
-            used_reference = True
-        else:
-            generated = provider.generate_head_variant(prompt, seed=character.seed)
-        sprite, _preview, validation = process_generated(character, generated.image)
-        head_layer, _ = split_head_body(sprite, slot.headAnchor)
-        asset = make_asset(
-            character,
-            head_layer,
-            f"head/{state.id}/{direction}/{variant}.png",
-            prompt.final,
-            generated.seed,
-            "head",
-            validation,
-            slot.headAnchor,
-        )
-        slot.headVariants[variant] = asset
-        last = {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
-    character_service.save_character(character)
-    return last
+    nested = _track(character_id, "Generating head variants")
+    try:
+        character = character_service.get_character(character_id)
+        state = character_service.find_state(character, state_id)
+        slot = character_service.find_slot(state, direction)
+        wanted = variants or list(HEAD_VARIANTS)
+        source = None
+        if slot.frames:
+            source = load_image(slot.frames[0].path)
+        elif character.acceptedBase:
+            source = load_image(character.acceptedBase.sprite.path)
+        last = {"character": character, "prompt": PromptLayers(), "usedReference": False, "asset": None}
+        for variant in wanted:
+            progress.set_step(character_id, "generating source image")
+            prompt = build_prompt(character, state=state, direction=direction, layer="head", head_variant=variant)
+            provider = get_provider()
+            used_reference = False
+            if source is not None and provider.info.supportsReference and use_reference:
+                head_layer, _body = split_head_body(source, slot.headAnchor)
+                generated = provider.generate_from_reference(prompt, head_layer, seed=character.seed, strength=0.38)
+                used_reference = True
+            else:
+                generated = provider.generate_head_variant(prompt, seed=character.seed)
+            sprite, preview, validation = process_generated(character, generated.image)
+            head_layer, _ = split_head_body(sprite, slot.headAnchor)
+            asset = make_asset(
+                character,
+                head_layer,
+                f"head/{state.id}/{direction}/{variant}.png",
+                prompt.final,
+                generated.seed,
+                "head",
+                validation,
+                slot.headAnchor,
+                preview,
+            )
+            slot.headVariants[variant] = asset
+            last = {"character": character, "prompt": prompt, "usedReference": used_reference, "asset": asset}
+        character_service.save_character(character)
+        return last
+    finally:
+        if not nested:
+            progress.finish(character_id)
 
 
 def update_anchors(

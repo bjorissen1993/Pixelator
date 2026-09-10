@@ -1,5 +1,6 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { assetUrl } from "../asset";
+import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import type { GenerationProgress, SpriteAsset } from "@shared";
+import { previewSrc } from "../asset";
 
 export function Button({
   variant = "primary",
@@ -46,28 +47,147 @@ export function Toggle({
   );
 }
 
+export function Spinner() {
+  return <span className="spinner" aria-hidden="true" />;
+}
+
+export function PipelineSteps({ progress }: { progress?: GenerationProgress | null }) {
+  const steps = progress?.steps ?? [];
+  if (!steps.length) return null;
+  return (
+    <ol className="pipeline-steps">
+      {steps.map((step, index) => {
+        const state = index < (progress?.stepIndex ?? 0) ? "done" : index === (progress?.stepIndex ?? 0) ? "current" : "";
+        return (
+          <li key={step} className={state}>
+            {step}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function PixelImage({
+  asset,
   path,
+  previewPath,
   cacheKey,
   scale = 8,
   size,
   alt = "sprite",
+  empty = "No sprite",
 }: {
+  asset?: SpriteAsset | null;
   path?: string | null;
+  previewPath?: string | null;
   cacheKey?: string | number | null;
   scale?: number;
   size?: number;
   alt?: string;
+  empty?: string;
 }) {
-  if (!path) return <div className="pixel-empty">No sprite</div>;
+  const [failed, setFailed] = useState(false);
+  const resolved = previewSrc(
+    asset ?? {
+      path: path ?? "",
+      previewPath: previewPath ?? "",
+      createdAt: cacheKey ? String(cacheKey) : "",
+    },
+  );
+  useEffect(() => setFailed(false), [resolved]);
+  if (!resolved || failed) return <div className="pixel-empty">{empty}</div>;
   const dim = size ? size * scale : undefined;
   return (
     <img
-      src={assetUrl(path, cacheKey)}
+      src={resolved}
       alt={alt}
       className="pixel"
       style={dim ? { width: dim, height: dim } : undefined}
+      onError={() => setFailed(true)}
     />
+  );
+}
+
+export function GenerationStatus({
+  busy,
+  generating,
+  progress,
+  error,
+}: {
+  busy?: string;
+  generating?: boolean;
+  progress?: GenerationProgress | null;
+  error?: string;
+}) {
+  if (!error && !busy && !generating) return null;
+  if (error) return <div className="banner error">{error}</div>;
+  const current = progress?.step || busy || "Working…";
+  return (
+    <div className="banner busy generation-status" aria-live="polite">
+      <Spinner />
+      <div>
+        <strong>{progress?.label || busy}</strong>
+        <p>{current}</p>
+        {generating && <PipelineSteps progress={progress} />}
+      </div>
+    </div>
+  );
+}
+
+export function SpritePreviewCard({
+  title,
+  empty,
+  asset,
+  loading,
+  progress,
+  actions,
+}: {
+  title: string;
+  empty: string;
+  asset?: SpriteAsset | null;
+  loading?: boolean;
+  progress?: GenerationProgress | null;
+  actions: ReactNode;
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = previewSrc(asset);
+  useEffect(() => setFailed(false), [src]);
+  const showImage = Boolean(src) && !failed;
+  const size = Math.max(192, (asset?.width || 48) * 8);
+  return (
+    <article className="sprite-card">
+      <header>
+        <h3>{title}</h3>
+        {asset && !failed ? (
+          <span className="sprite-meta">
+            {asset.width}×{asset.height} preview
+          </span>
+        ) : null}
+      </header>
+      <div className={`sprite-stage ${loading ? "is-loading" : ""}`}>
+        {showImage ? (
+          <img
+            src={src}
+            alt={title}
+            className="pixel sprite-preview"
+            style={{ width: size, height: size }}
+            onError={() => setFailed(true)}
+          />
+        ) : loading ? null : (
+          <div className="pixel-empty sprite-empty">{empty}</div>
+        )}
+        {loading ? (
+          <div className="sprite-loading" aria-live="polite">
+            <Spinner />
+            <strong>{progress?.label || "Generating…"}</strong>
+            <span>{progress?.step || "generating source image"}</span>
+            <PipelineSteps progress={progress} />
+          </div>
+        ) : null}
+      </div>
+      <footer className="chip-row">{actions}</footer>
+    </article>
   );
 }
 

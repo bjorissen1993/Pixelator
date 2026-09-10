@@ -11,6 +11,7 @@ from models.generation import (
     UpdateAnchorsRequest,
 )
 from services import generation as generation_service
+from services import progress as progress_service
 
 router = APIRouter()
 
@@ -53,6 +54,19 @@ def clear_reference(character_id: str):
         return generation_service.clear_reference(character_id)
     except Exception as exc:
         _http(exc)
+
+
+@router.post("/api/characters/{character_id}/discard-pending")
+def discard_pending(character_id: str):
+    try:
+        return generation_service.discard_pending(character_id)
+    except Exception as exc:
+        _http(exc)
+
+
+@router.get("/api/characters/{character_id}/generation-progress")
+def generation_progress(character_id: str):
+    return progress_service.get(character_id)
 
 
 @router.post("/api/characters/{character_id}/generate-variation")

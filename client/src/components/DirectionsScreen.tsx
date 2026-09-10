@@ -14,6 +14,7 @@ export function DirectionsScreen() {
     run,
     applyResult,
     busy,
+    generating,
   } = useWorkspace();
   if (!character) return null;
   const state = character.states.find((item) => item.id === selectedStateId);
@@ -32,6 +33,7 @@ export function DirectionsScreen() {
                 if (result) applyResult(result);
               })
             }
+            disabled={generating || !!busy}
           >
             Generate missing
           </Button>
@@ -49,11 +51,11 @@ export function DirectionsScreen() {
             <div key={direction} className={`compass-cell ${selected ? "active" : ""} ${enabled ? "" : "dim"}`}>
               <button type="button" className="compass-select" onClick={() => setSelectedDirection(direction)}>
                 <span>{direction}</span>
-                <PixelImage path={frame?.path} cacheKey={frame?.createdAt} size={character.spriteSize} scale={3} />
+                <PixelImage asset={frame} cacheKey={frame?.createdAt} size={character.spriteSize} scale={3} />
               </button>
               <Button
                 variant="ghost"
-                disabled={!enabled || !!busy}
+                disabled={!enabled || generating || !!busy}
                 onClick={() =>
                   run(`Regenerating ${direction}`, async () => {
                     const result = await api.generateDirection(character.id, {

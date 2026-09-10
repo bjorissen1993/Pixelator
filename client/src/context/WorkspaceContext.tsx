@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DIRECTIONS_8 } from "@shared";
 import type {
   CharacterProfile,
   Direction,
+  GenerationProgress,
   GenerationResult,
   PromptLayers,
   ProviderInfo,
@@ -21,6 +22,10 @@ export const SECTIONS: WorkspaceSection[] = [
   { id: "export", label: "Export" },
 ];
 
+const GENERATING_PATTERN = /generat|regen/i;
+
+type RunOptions = { generating?: boolean };
+
 type WorkspaceValue = {
   characters: CharacterProfile[];
   character: CharacterProfile | null;
@@ -30,6 +35,8 @@ type WorkspaceValue = {
   selectedStateId: string | null;
   selectedDirection: Direction;
   busy: string;
+  generating: boolean;
+  progress: GenerationProgress | null;
   error: string;
   prompt: PromptLayers | null;
   usedReference: boolean;
@@ -39,7 +46,7 @@ type WorkspaceValue = {
   refresh: () => Promise<void>;
   selectCharacter: (id: string) => void;
   setCharacter: (character: CharacterProfile) => void;
-  run: <T>(label: string, fn: () => Promise<T>) => Promise<T | undefined>;
+  run: <T>(label: string, fn: () => Promise<T>, options?: RunOptions) => Promise<T | undefined>;
   applyResult: (result: GenerationResult | CharacterProfile) => void;
 };
 
@@ -58,9 +65,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
   const [selectedDirection, setSelectedDirection] = useState<Direction>("S");
   const [busy, setBusy] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState<GenerationProgress | null>(null);
   const [error, setError] = useState("");
   const [prompt, setPrompt] = useState<PromptLayers | null>(null);
   const [usedReference, setUsedReference] = useState(false);
+  const characterIdRef = useRef<string | null>(null);
+  characterIdRef.current = character?.id ?? null;
 
   const applyCharacter = useCallback((next: CharacterProfile) => {
     setCharacter(next);
@@ -100,16 +111,48 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     refresh().catch((err: Error) => setError(err.message));
   }, [refresh]);
 
-  const run = useCallback(async <T,>(label: string, fn: () => Promise<T>) => {
+  const run = useCallback(async <T,>(label: string, fn: () => Promise<T>, options?: RunOptions) => {
+    const track = options?.generating ?? GENERATING_PATTERN.test(label);
     setBusy(label);
+    setGenerating(track);
     setError("");
+    if (track) {
+      setProgress({
+        active: true,
+        label,
+        step: "generating source image",
+        steps: [
+          "generating source image",
+          "removing background",
+          "cropping sprite",
+          "reducing palette",
+          "saving preview",
+        ],
+        stepIndex: 0,
+      });
+    }
+    let timer: number | undefined;
+    if (track && characterIdRef.current) {
+      const id = characterIdRef.current;
+      timer = window.setInterval(() => {
+        api
+          .generationProgress(id)
+          .then((next) => {
+            if (next.active || next.step) setProgress({ ...next, label: next.label || label });
+          })
+          .catch(() => undefined);
+      }, 350);
+    }
     try {
       return await fn();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return undefined;
     } finally {
+      if (timer) window.clearInterval(timer);
       setBusy("");
+      setGenerating(false);
+      setProgress(null);
     }
   }, []);
 
@@ -123,6 +166,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedStateId,
       selectedDirection: DIRECTIONS_8.includes(selectedDirection) ? selectedDirection : "S",
       busy,
+      generating,
+      progress,
       error,
       prompt,
       usedReference,
@@ -148,6 +193,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       character,
       characters,
       error,
+      generating,
+      progress,
       prompt,
       provider,
       refresh,

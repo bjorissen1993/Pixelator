@@ -6,7 +6,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, Field, PixelImage, Section, TextInput } from "./ui";
 
 export function HeadScreen() {
-  const { character, selectedStateId, selectedDirection, run, applyResult, setCharacter } = useWorkspace();
+  const { character, selectedStateId, selectedDirection, run, applyResult, setCharacter, generating, busy } = useWorkspace();
   const state = character?.states.find((item) => item.id === selectedStateId);
   const slot = state?.directions.find((item) => item.direction === selectedDirection);
   const sprite = slot?.frames[0] ?? character?.acceptedBase?.sprite ?? character?.pendingBase;
@@ -47,6 +47,7 @@ export function HeadScreen() {
         title="Head / body"
         actions={
           <Button
+            disabled={generating || !!busy}
             onClick={() =>
               run("Generating head variants", async () => {
                 const result = await api.generateHeadVariants(character.id, state.id, selectedDirection);
@@ -125,11 +126,11 @@ export function HeadScreen() {
             </div>
             <div className="ref-row">
               <figure>
-                <PixelImage path={slot.body?.path} cacheKey={slot.body?.createdAt} size={character.spriteSize} scale={4} />
+                <PixelImage asset={slot.body} size={character.spriteSize} scale={4} />
                 <figcaption>Body</figcaption>
               </figure>
               <figure>
-                <PixelImage path={slot.head?.path} cacheKey={slot.head?.createdAt} size={character.spriteSize} scale={4} />
+                <PixelImage asset={slot.head} size={character.spriteSize} scale={4} />
                 <figcaption>Head</figcaption>
               </figure>
             </div>
@@ -144,12 +145,7 @@ export function HeadScreen() {
         <div className="card-grid">
           {HEAD_VARIANTS.map((variant) => (
             <figure key={variant} className="state-card">
-              <PixelImage
-                path={slot.headVariants[variant]?.path}
-                cacheKey={slot.headVariants[variant]?.createdAt}
-                size={character.spriteSize}
-                scale={4}
-              />
+              <PixelImage asset={slot.headVariants[variant]} size={character.spriteSize} scale={4} />
               <figcaption>{variant}</figcaption>
             </figure>
           ))}

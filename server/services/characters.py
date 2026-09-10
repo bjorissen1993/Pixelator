@@ -8,6 +8,7 @@ from models.character import CharacterProfile, CharacterState, DirectionSlot, He
 from models.common import CreateCharacterRequest, CreateStateRequest, UpdateStateRequest
 from models.patch import CharacterPatch
 from persistence.store import store
+from processing.preview import ensure_character_previews
 
 
 def utc_now() -> str:
@@ -34,11 +35,17 @@ def unique_slug(name: str) -> str:
     return f"{base}-{index}"
 
 
+def _with_previews(character: CharacterProfile) -> CharacterProfile:
+    if ensure_character_previews(character):
+        return store.save(character)
+    return character
+
+
 def get_character(character_id: str) -> CharacterProfile:
     character = store.get(character_id)
     if character is None:
         raise KeyError(character_id)
-    return character
+    return _with_previews(character)
 
 
 def find_state(character: CharacterProfile, state_id: str) -> CharacterState:
@@ -71,7 +78,7 @@ def ensure_slots(state: CharacterState, sprite_size: int) -> None:
 
 
 def list_characters() -> list[CharacterProfile]:
-    return store.list_characters()
+    return [_with_previews(character) for character in store.list_characters()]
 
 
 def create_character(payload: CreateCharacterRequest) -> CharacterProfile:

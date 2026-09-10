@@ -86,6 +86,7 @@ export interface SpriteAsset {
   id: string;
   kind: SpriteKind;
   path: string;
+  previewPath?: string;
   width: number;
   height: number;
   seed?: number | null;
@@ -94,6 +95,14 @@ export interface SpriteAsset {
   accepted: boolean;
   validation?: QualityValidation | null;
   head?: HeadAnchor | null;
+}
+
+export interface GenerationProgress {
+  active: boolean;
+  label: string;
+  step: string;
+  steps: string[];
+  stepIndex: number;
 }
 
 export interface DirectionSlot {

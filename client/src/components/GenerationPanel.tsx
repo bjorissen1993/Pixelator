@@ -1,9 +1,9 @@
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { Button, Section } from "./ui";
+import { Button, PipelineSteps, Section } from "./ui";
 
 export function GenerationPanel() {
-  const { character, selectedStateId, selectedDirection, provider, prompt, usedReference, busy, run, applyResult } =
+  const { character, selectedStateId, selectedDirection, provider, prompt, usedReference, busy, generating, progress, run, applyResult } =
     useWorkspace();
   if (!character) return null;
   const state = character.states.find((item) => item.id === selectedStateId);
@@ -25,25 +25,25 @@ export function GenerationPanel() {
           {provider?.supportsReference ? "available" : "not loaded"}.
         </p>
         <div className="action-grid">
-          <Button disabled={!!busy} onClick={() => go("Generating base", () => api.generateBase(character.id))}>
+          <Button disabled={generating || !!busy} onClick={() => go("Generating base", () => api.generateBase(character.id))}>
             Generate base
           </Button>
           <Button
-            disabled={!!busy || !state}
+            disabled={generating || !!busy || !state}
             variant="secondary"
             onClick={() => state && go(`Generating ${state.name}`, () => api.generateState(character.id, state.id))}
           >
             Generate selected state
           </Button>
           <Button
-            disabled={!!busy || !state}
+            disabled={generating || !!busy || !state}
             variant="secondary"
             onClick={() => state && go("Generating missing directions", () => api.generateMissing(character.id, state.id))}
           >
             Generate missing directions
           </Button>
           <Button
-            disabled={!!busy || !state}
+            disabled={generating || !!busy || !state}
             variant="secondary"
             onClick={() =>
               state &&
@@ -55,14 +55,14 @@ export function GenerationPanel() {
             Regenerate current direction
           </Button>
           <Button
-            disabled={!!busy}
+            disabled={generating || !!busy}
             variant="secondary"
             onClick={() => go("Regenerating all states", () => api.generateAllStates(character.id))}
           >
             Regenerate all states
           </Button>
           <Button
-            disabled={!!busy || !state}
+            disabled={generating || !!busy || !state}
             variant="secondary"
             onClick={() =>
               state &&
@@ -72,6 +72,16 @@ export function GenerationPanel() {
             Generate head variants
           </Button>
         </div>
+        {generating && (
+          <div className="sprite-loading generation-inline" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div>
+              <strong>{progress?.label || busy}</strong>
+              <p>{progress?.step || "generating source image"}</p>
+              <PipelineSteps progress={progress} />
+            </div>
+          </div>
+        )}
         {usedReference && <p className="hint">Last job used the accepted base as an img2img reference.</p>}
       </Section>
       {prompt && (

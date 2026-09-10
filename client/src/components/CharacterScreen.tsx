@@ -3,7 +3,7 @@ import type { CharacterProfile, IdentityLock } from "@shared";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { Area, Button, Field, PixelImage, Section, Select, TextInput, Toggle } from "./ui";
+import { Area, Button, Field, Section, Select, SpritePreviewCard, TextInput, Toggle } from "./ui";
 
 const LOCK_LABELS: Array<[keyof IdentityLock, string]> = [
   ["lockFace", "Face"],
@@ -17,11 +17,12 @@ const LOCK_LABELS: Array<[keyof IdentityLock, string]> = [
 ];
 
 export function CharacterScreen() {
-  const { character, selectedStateId, selectedDirection, busy, run, applyResult, setCharacter } = useWorkspace();
+  const { character, selectedStateId, selectedDirection, busy, generating, progress, run, applyResult, setCharacter } = useWorkspace();
   const [draft, setDraft] = useState<CharacterProfile | null>(character);
 
   useEffect(() => setDraft(character), [character]);
   if (!character || !draft) return null;
+  const locked = generating || !!busy;
 
   const set = <K extends keyof CharacterProfile>(key: K, value: CharacterProfile[K]) =>
     setDraft({ ...draft, [key]: value });
@@ -47,15 +48,19 @@ export function CharacterScreen() {
     });
 
   const applyMaster = (applyMode: string) =>
-    run("Updating master prompt", async () => {
-      const result = await api.applyMasterPrompt(character.id, {
-        masterPrompt: draft.masterPrompt,
-        applyMode,
-        stateId: selectedStateId,
-        direction: selectedDirection,
-      });
-      if (result) applyResult(result);
-    });
+    run(
+      "Updating master prompt",
+      async () => {
+        const result = await api.applyMasterPrompt(character.id, {
+          masterPrompt: draft.masterPrompt,
+          applyMode,
+          stateId: selectedStateId,
+          direction: selectedDirection,
+        });
+        if (result) applyResult(result);
+      },
+      { generating: applyMode !== "future_only" },
+    );
 
   return (
     <div className="stack">
@@ -93,7 +98,7 @@ export function CharacterScreen() {
         </p>
         <div className="chip-row">
           {APPLY_MODES.map((mode) => (
-            <Button key={mode} variant="secondary" onClick={() => applyMaster(mode)}>
+            <Button key={mode} variant="secondary" disabled={!!busy} onClick={() => applyMaster(mode)}>
               {mode.replaceAll("_", " ")}
             </Button>
           ))}
@@ -177,43 +182,84 @@ export function CharacterScreen() {
         </Field>
       </Section>
 
-      <Section
-        title="Reference sprite"
-        actions={
-          <div className="chip-row">
-            <Button variant="secondary" onClick={() => run("Generating base", async () => {
-              const result = await api.generateBase(character.id);
-              if (result) applyResult(result);
-            })}>
-              Generate base
-            </Button>
-            <Button onClick={() => run("Accepting base", () => api.acceptBase(character.id).then(setCharacter))}>
-              Accept as base
-            </Button>
-            <Button variant="secondary" onClick={() => run("Replacing base", () => api.replaceBase(character.id).then(setCharacter))}>
-              Replace base
-            </Button>
-            <Button variant="ghost" onClick={() => run("Clearing reference", () => api.clearReference(character.id).then(setCharacter))}>
-              Clear reference
-            </Button>
-            <Button variant="secondary" onClick={() => run("Generating variation", async () => {
-              const result = await api.generateVariation(character.id);
-              if (result) applyResult(result);
-            })}>
-              Generate variation
-            </Button>
-          </div>
-        }
-      >
+      <Section title="Reference sprites">
+        <p className="hint">
+          Pending is the latest generated candidate. Accepted base is the locked identity reference used for later
+          generations. Previews are nearest-neighbour enlargements of the true sprite.
+        </p>
         <div className="ref-row">
-          <figure>
-            <PixelImage path={character.pendingBase?.path} cacheKey={character.pendingBase?.createdAt} size={character.spriteSize} />
-            <figcaption>Pending</figcaption>
-          </figure>
-          <figure>
-            <PixelImage path={character.acceptedBase?.sprite.path} cacheKey={character.acceptedBase?.acceptedAt} size={character.spriteSize} />
-            <figcaption>Accepted base</figcaption>
-          </figure>
+          <SpritePreviewCard
+            key={character.pendingBase?.id ?? "pending-empty"}
+            title="Pending Sprite"
+            empty="No pending sprite"
+            asset={character.pendingBase}
+            loading={generating}
+            progress={progress}
+            actions={
+              <>
+                <Button
+                  disabled={locked}
+                  onClick={() =>
+                    run("Generating base", async () => {
+                      const result = await api.generateBase(character.id);
+                      if (result) applyResult(result);
+                    })
+                  }
+                >
+                  Generate base
+                </Button>
+                <Button
+                  disabled={locked || !character.pendingBase}
+                  onClick={() => run("Accepting base", () => api.acceptBase(character.id).then(setCharacter), { generating: false })}
+                >
+                  Accept as base
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={locked || !character.pendingBase}
+                  onClick={() => run("Discarding pending", () => api.discardPending(character.id).then(setCharacter), { generating: false })}
+                >
+                  Discard
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={locked || !character.acceptedBase}
+                  onClick={() =>
+                    run("Generating variation", async () => {
+                      const result = await api.generateVariation(character.id);
+                      if (result) applyResult(result);
+                    })
+                  }
+                >
+                  Generate variation
+                </Button>
+              </>
+            }
+          />
+          <SpritePreviewCard
+            key={character.acceptedBase?.sprite.id ?? "accepted-empty"}
+            title="Accepted Base"
+            empty="No accepted base"
+            asset={character.acceptedBase?.sprite}
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={locked || !character.pendingBase}
+                  onClick={() => run("Replacing base", () => api.replaceBase(character.id).then(setCharacter), { generating: false })}
+                >
+                  Replace base
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={locked || !character.acceptedBase}
+                  onClick={() => run("Clearing reference", () => api.clearReference(character.id).then(setCharacter), { generating: false })}
+                >
+                  Clear reference
+                </Button>
+              </>
+            }
+          />
         </div>
       </Section>
     </div>

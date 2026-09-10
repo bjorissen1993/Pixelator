@@ -126,9 +126,16 @@ class PixelPipeline:
         remove_bg: bool,
         locked_palette: list[tuple[int, int, int]] | None = None,
         cleanup: bool = True,
+        on_step=None,
     ) -> tuple[Image.Image, Image.Image, QualityValidation]:
+        if on_step:
+            on_step("removing background")
         rgba = remove_background(image, remove_bg)
+        if on_step:
+            on_step("cropping sprite")
         sprite = fit_to_canvas(rgba, size)
+        if on_step:
+            on_step("reducing palette")
         if locked_palette:
             sprite = map_to_palette(sprite, locked_palette)
         else:

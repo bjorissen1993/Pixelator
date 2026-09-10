@@ -77,6 +77,7 @@ class SpriteAsset(BaseModel):
     id: str
     kind: SpriteKind = "full"
     path: str
+    previewPath: str = ""
     width: int
     height: int
     seed: int | None = None

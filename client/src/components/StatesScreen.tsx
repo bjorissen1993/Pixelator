@@ -5,7 +5,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { Button, Field, PixelImage, Section, Select, TextInput, Toggle } from "./ui";
 
 export function StatesScreen() {
-  const { character, templates, selectedStateId, setSelectedStateId, setSection, run, setCharacter, applyResult } =
+  const { character, templates, selectedStateId, setSelectedStateId, setSection, run, setCharacter, applyResult, generating, busy } =
     useWorkspace();
   const [creating, setCreating] = useState(false);
   const [templateId, setTemplateId] = useState("idle");
@@ -26,7 +26,7 @@ export function StatesScreen() {
             const preview = state.directions.find((slot) => slot.frames[0])?.frames[0];
             return (
               <article key={state.id} className={`state-card ${selectedStateId === state.id ? "active" : ""}`}>
-                <PixelImage path={preview?.path} cacheKey={preview?.createdAt} size={character.spriteSize} scale={4} />
+                <PixelImage asset={preview} cacheKey={preview?.createdAt} size={character.spriteSize} scale={4} />
                 <div>
                   <strong>{state.name}</strong>
                   <p>
@@ -48,6 +48,7 @@ export function StatesScreen() {
                         if (result) applyResult(result);
                       })
                     }
+                    disabled={generating || !!busy}
                   >
                     Generate
                   </Button>
