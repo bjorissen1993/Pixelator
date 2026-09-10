@@ -1,4 +1,4 @@
-import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, ProviderInfo, StateTemplate } from "@shared";
+import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob } from "@shared";
 
 function formatDetail(detail: unknown): string {
   if (typeof detail === "string") return detail;
@@ -90,4 +90,46 @@ export const api = {
     request<GenerationResult>(`/api/characters/${id}/master-prompt`, { method: "POST", body: JSON.stringify(body) }),
   updateAnchors: (id: string, body: Record<string, unknown>) =>
     request<CharacterProfile>(`/api/characters/${id}/head-anchors`, { method: "POST", body: JSON.stringify(body) }),
+  generateDirectionSet: (id: string, body: Record<string, unknown> = {}) =>
+    request<{ job: GenerationJob; character: CharacterProfile }>(`/api/characters/${id}/generate/directions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  acceptDirection: (id: string, stateId: string, direction: Direction) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/accept`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction }),
+    }),
+  rejectDirection: (id: string, stateId: string, direction: Direction, reason?: string, customReason?: string) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/reject`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction, reason, customReason }),
+    }),
+  lockDirection: (id: string, stateId: string, direction: Direction) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/lock`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction }),
+    }),
+  unlockDirection: (id: string, stateId: string, direction: Direction) =>
+    request<CharacterProfile>(`/api/characters/${id}/directions/unlock`, {
+      method: "POST",
+      body: JSON.stringify({ stateId, direction }),
+    }),
+  generateAnimation: (id: string, body: Record<string, unknown>) =>
+    request<{ job: GenerationJob; character: CharacterProfile }>(`/api/characters/${id}/generate/animation`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  refine: (id: string, body: Record<string, unknown>) =>
+    request<GenerationResult>(`/api/characters/${id}/refine`, { method: "POST", body: JSON.stringify(body) }),
+  getJob: (jobId: string) => request<{ job: GenerationJob; result: GenerationResult | null }>(`/api/jobs/${jobId}`),
+  characterJobs: (id: string) => request<{ active: GenerationJob | null; jobs: GenerationJob[] }>(`/api/characters/${id}/jobs`),
+  styles: () => request<StyleProfile[]>("/api/styles"),
+  createStyle: (name: string) => request<StyleProfile>("/api/styles", { method: "POST", body: JSON.stringify({ name }) }),
+  applyStyle: (id: string, styleId: string) =>
+    request<CharacterProfile>(`/api/characters/${id}/apply-style/${styleId}`, { method: "POST" }),
+  memory: (characterId?: string) =>
+    request<MemoryEntry[]>(`/api/memory${characterId ? `?characterId=${characterId}` : ""}`),
+  memorySuggestions: (characterId?: string) =>
+    request<MemorySuggestions>(`/api/memory/suggestions${characterId ? `?characterId=${characterId}` : ""}`),
 };

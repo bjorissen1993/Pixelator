@@ -7,9 +7,21 @@ from prompts.global_style import global_style
 from prompts.identity import identity_constraints
 from prompts.state_prompts import state_prompt
 
+DEFAULT_NEGATIVE = (
+    "photorealistic, 3D render, blurry, smooth gradients, anti-aliasing, painterly, "
+    "extra characters, scenery, text, watermark, modern clothing unless requested"
+)
+
 
 def _join(parts: list[str]) -> str:
     return ", ".join(part.strip().strip(",") for part in parts if part and part.strip())
+
+
+def build_negative(character: CharacterProfile) -> str:
+    parts = [DEFAULT_NEGATIVE, character.negativePrompt]
+    if character.spirit.enabled or character.spirit.noLegs:
+        parts.append("human legs, boots, feet, armor, weapons unless requested")
+    return _join(parts)
 
 
 def build_prompt(
@@ -21,15 +33,30 @@ def build_prompt(
     head_variant: HeadVariant | None = None,
     frame_index: int = 0,
     frame_count: int = 1,
+    from_direction: Direction | None = None,
+    action: str = "",
+    embed_negative: bool = True,
 ) -> PromptLayers:
     layers = PromptLayers(
-        globalStyle=global_style(character.camera, character.detail, character.outline, character.spriteSize),
+        globalStyle=global_style(
+            character.camera,
+            character.detail,
+            character.outline,
+            character.shading,
+            character.bodyTemplate,
+            character.spriteSize,
+        ),
         masterPrompt=character.masterPrompt,
         identity=identity_constraints(character),
         state=state_prompt(state) if state else "neutral full-body identity pose, canonical reference stance",
-        direction=direction_prompt(direction, character.camera) if direction else "canonical front-south identity view",
-        expression=expression_prompt(state, character.emotion) if state else f"default mood: {character.emotion.defaultMood}",
+        direction=direction_prompt(direction, character.camera, from_direction)
+        if direction
+        else "canonical front-south identity view",
+        expression=expression_prompt(state, character.emotion)
+        if state
+        else f"default mood: {character.emotion.defaultMood}",
         override=override.strip(),
+        negative=build_negative(character),
     )
 
     extras: list[str] = []
@@ -39,8 +66,12 @@ def build_prompt(
         extras.append("body-only sprite, neck stump or empty neck joint, no head, keep body identity")
     if head_variant:
         extras.append(_head_variant_clause(head_variant))
+    if action:
+        extras.append(action)
     if frame_count > 1:
         extras.append(f"animation frame {frame_index + 1} of {frame_count}, same character, same costume, related pose")
+    if embed_negative and layers.negative:
+        extras.append(f"avoid: {layers.negative}")
 
     layers.final = _join(
         [

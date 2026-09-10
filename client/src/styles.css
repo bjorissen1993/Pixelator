@@ -154,6 +154,7 @@ textarea { resize: vertical; }
   justify-items: center;
   color: inherit;
 }
+button.compass-cell { width: 100%; font: inherit; }
 .compass-select {
   display: grid;
   gap: 8px;
@@ -297,8 +298,33 @@ textarea { resize: vertical; }
   border-radius: 14px;
 }
 
-@media (max-width: 960px) {
-  .workspace { grid-template-columns: 1fr; }
-  .sidebar { border-right: 0; border-bottom: 1px solid #273128; }
-  .form-grid, .ref-row, .head-layout { grid-template-columns: 1fr; }
+.studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+}
+.studio-main { display: grid; gap: 18px; min-width: 0; }
+.studio-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  flex-wrap: wrap;
+}
+.studio-hero h2 { margin: 4px 0 0; }
+.studio-hero p { margin: 6px 0 0; color: #9ba79a; }
+.studio-side { position: sticky; top: 12px; }
+.studio-compass .compass-cell, .studio-compass .ref-cell {
+  min-height: 150px;
+}
+.compass-cell.status-accepted { border-color: #c8ea83; }
+.compass-cell.status-pending { border-color: #7d8f4a; }
+.compass-cell.status-rejected { border-color: #8a4a4a; }
+.compass-cell.status-locked { border-color: #c8ff68; box-shadow: inset 0 0 0 1px #c8ff68; }
+.job-line { color: #c8ea83; font-weight: 700; margin: 0; }
+.frame-strip { display: flex; gap: 8px; overflow: auto; padding-top: 8px; }
+@media (max-width: 1100px) {
+  .studio { grid-template-columns: 1fr; }
+  .studio-side { position: static; }
 }

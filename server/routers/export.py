@@ -65,10 +65,10 @@ def export_metadata(character_id: str):
         _http(exc)
 
 
-@router.post("/api/characters/{character_id}/export/zip")
-def export_zip(character_id: str):
+@router.post("/api/characters/{character_id}/export/training-dataset")
+def export_training(character_id: str):
     try:
-        path = export_service.export_zip(character_id)
+        path = export_service.export_training_dataset(character_id)
         return export_service.file_response(path, path.name, "application/zip")
     except Exception as exc:
         _http(exc)

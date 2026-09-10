@@ -23,6 +23,9 @@ _TOP_DOWN = {
 }
 
 
-def direction_prompt(direction: Direction, camera: CameraAngle) -> str:
-    table = _FRONT if camera == "front" else _TOP_DOWN
-    return f"{direction} direction, {table[direction]}, same character, same costume, same proportions"
+def direction_prompt(direction: Direction, camera: CameraAngle, from_direction: Direction | None = None) -> str:
+    table = _FRONT if camera in ("side", "front") else _TOP_DOWN
+    clause = f"{direction} direction, {table[direction]}, same character, same costume, same proportions, same silhouette, same equipment"
+    if from_direction and from_direction != direction:
+        clause += f", rotate the reference view from {from_direction} to {direction} without changing identity"
+    return clause

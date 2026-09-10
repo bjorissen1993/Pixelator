@@ -163,5 +163,58 @@ def export_zip(character_id: str) -> Path:
     return zip_path
 
 
+def export_training_dataset(character_id: str) -> Path:
+    """Export accepted sprites + captions for future LoRA work. Does not train anything."""
+    character = character_service.get_character(character_id)
+    folder = asset_path(character.slug, "exports/training")
+    folder.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    index = 0
+
+    def add(asset, direction, state_name):
+        nonlocal index
+        if not asset or not asset.path:
+            return
+        if not (asset.accepted or getattr(asset, "status", "") in ("accepted", "locked")):
+            return
+        source = config.DATA_DIR / asset.path
+        if not source.exists():
+            return
+        name = f"{index:04d}.png"
+        target = folder / name
+        target.write_bytes(source.read_bytes())
+        caption = asset.prompt or character.masterPrompt
+        (folder / f"{index:04d}.txt").write_text(caption, encoding="utf-8")
+        rows.append(
+            {
+                "file": name,
+                "caption": caption,
+                "negative": asset.negativePrompt or character.negativePrompt,
+                "character": character.name,
+                "identity": character.masterPrompt,
+                "direction": direction,
+                "state": state_name,
+                "seed": asset.seed,
+                "styleProfileId": character.styleProfileId,
+            }
+        )
+        index += 1
+
+    if character.acceptedBase:
+        add(character.acceptedBase.sprite, "S", "base")
+    for state in character.states:
+        for slot in state.directions:
+            if slot.status in ("accepted", "locked") and slot.frames:
+                add(slot.frames[0], slot.direction, state.name)
+    manifest = folder / "captions.jsonl"
+    manifest.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+    zip_path = asset_path(character.slug, "exports/training-dataset.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for file_path in folder.rglob("*"):
+            if file_path.is_file():
+                archive.write(file_path, arcname=str(file_path.relative_to(folder)))
+    return zip_path
+
+
 def file_response(path: Path, filename: str | None = None, media_type: str | None = None) -> FileResponse:
     return FileResponse(path, filename=filename or path.name, media_type=media_type)

@@ -1,8 +1,8 @@
 # Chimera Pixel Generator / Pixelator
 
-Local-first AI pixel character workspace. Character System v2 keeps a persistent profile, layered prompts, 8-direction states, emotion-aware pose language, head/body metadata, Phaser exports, and a swappable generation provider.
+Local-first AI pixel character workspace. Character System v2.1 is a visual sprite studio: generate a base, accept it as an identity reference, then generate 8 directions as one job.
 
-The current image backend is still local Diffusers (default: SDXL Turbo). It generates a 512 image, then Pixelator's pipeline converts it into a sprite. That is **not** PixelLab-quality native pixel art yet. The architecture is ready for a pixel-art checkpoint, LoRA, or reference-conditioned model.
+The default image backend is still local Diffusers (SDXL Turbo unless you change it). It generates at the provider's preferred size (default 256), then Pixelator runs **cleanup** (background, fit, palette, outline). That is **not** PixelLab-quality native pixel art. Set `PIXEL_MODEL_ID` to a pixel-art checkpoint to switch without changing the workflow.
 
 ## Requirements
 - Node.js 20+
@@ -30,31 +30,37 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
-
-The Vite dev server proxies `/api`, `/health`, and `/data` to the FastAPI process.
+Open the printed localhost URL. Vite proxies `/api`, `/health`, and `/data` to FastAPI.
 
 ## Environment
 ```
 MODEL_ID=stabilityai/sdxl-turbo
+PIXEL_MODEL_ID=
 DEVICE=cuda
 ENABLE_BG_REMOVAL=true
+GENERATION_SIZE=256
+INFERENCE_STEPS=4
+GUIDANCE_SCALE=0
 ```
 
-Optional: `DATA_DIR` overrides the JSON/asset store. Default is `../data` next to `server/`.
+`GENERATION_SIZE` is the provider's internal raster size. Do not set this to 512 unless the model requires it. `PIXEL_MODEL_ID` selects a pixel-oriented Diffusers checkpoint and marks `nativePixelOutput` honestly only for that path.
 
-Swap `MODEL_ID` for a pixel-art checkpoint later. Do not change character/prompt/export code for that.
+## Workflow
+1. Generate Base → review Pending Sprite → Accept as Base
+2. Accepted Base is the img2img identity reference (source image, not just prompt text)
+3. Generate 8 Directions as one operation (sequential internally)
+4. Accept / reject / lock / regenerate individual facings
+5. Add states and animations from accepted identity
+6. Export sprite sheets, metadata, or an accepted-only training dataset (no training is performed)
 
 ## Data
-Characters, states, prompts, seeds and generated files live under:
-
 ```
 data/characters/<slug>/
   character.json
   base/
   states/<stateId>/<direction>/
-  head/
   exports/
+data/project/
+  styles.json
+  memory.json
 ```
-
-Berwynn is seeded automatically if the store is empty.

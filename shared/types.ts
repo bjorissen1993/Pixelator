@@ -1,13 +1,20 @@
 import type {
   APPLY_MODES,
+  ASSET_STATUSES,
   BODY_MOVEMENT,
+  BODY_TEMPLATES,
   CAMERA_ANGLES,
   DETAIL_LEVELS,
   DIRECTIONS_8,
   EXPRESSIVENESS,
   FACIAL_RANGE,
   HEAD_VARIANTS,
+  JOB_STATUSES,
   OUTLINE_STYLES,
+  PALETTE_MODES,
+  REJECTION_REASONS,
+  SEED_MODES,
+  SHADING_STYLES,
 } from "./constants";
 
 export type Direction = (typeof DIRECTIONS_8)[number];
@@ -15,6 +22,13 @@ export type DirectionsMode = "8" | "4" | "1";
 export type CameraAngle = (typeof CAMERA_ANGLES)[number];
 export type DetailLevel = (typeof DETAIL_LEVELS)[number];
 export type OutlineStyle = (typeof OUTLINE_STYLES)[number];
+export type ShadingStyle = (typeof SHADING_STYLES)[number];
+export type PaletteMode = (typeof PALETTE_MODES)[number];
+export type BodyTemplate = (typeof BODY_TEMPLATES)[number];
+export type AssetStatus = (typeof ASSET_STATUSES)[number];
+export type JobStatus = (typeof JOB_STATUSES)[number];
+export type SeedMode = (typeof SEED_MODES)[number];
+export type RejectionReason = (typeof REJECTION_REASONS)[number];
 export type Expressiveness = (typeof EXPRESSIVENESS)[number];
 export type BodyMovement = (typeof BODY_MOVEMENT)[number];
 export type FacialRange = (typeof FACIAL_RANGE)[number];
@@ -87,14 +101,19 @@ export interface SpriteAsset {
   kind: SpriteKind;
   path: string;
   previewPath?: string;
+  sourcePath?: string;
   width: number;
   height: number;
   seed?: number | null;
   prompt: string;
+  negativePrompt?: string;
   createdAt: string;
   accepted: boolean;
+  status?: AssetStatus;
   validation?: QualityValidation | null;
   head?: HeadAnchor | null;
+  providerId?: string;
+  fromDirection?: Direction | null;
 }
 
 export interface GenerationProgress {
@@ -103,6 +122,9 @@ export interface GenerationProgress {
   step: string;
   steps: string[];
   stepIndex: number;
+  current?: number;
+  total?: number | null;
+  currentItem?: string;
 }
 
 export interface DirectionSlot {
@@ -113,6 +135,9 @@ export interface DirectionSlot {
   overlays: SpriteAsset[];
   headVariants: Partial<Record<HeadVariant, SpriteAsset>>;
   headAnchor: HeadAnchor;
+  status: AssetStatus;
+  locked: boolean;
+  seed?: number | null;
 }
 
 export interface CharacterState {
@@ -131,6 +156,7 @@ export interface CharacterState {
   kind: StateKind;
   createdAt: string;
   directions: DirectionSlot[];
+  seed?: number | null;
 }
 
 export interface AcceptedBase {
@@ -145,17 +171,23 @@ export interface CharacterProfile {
   slug: string;
   name: string;
   masterPrompt: string;
+  negativePrompt: string;
   appearance: string;
   clothing: string;
   bodyType: string;
+  bodyTemplate: BodyTemplate;
   species: string;
   spirit: SpiritSettings;
   spriteSize: number;
   camera: CameraAngle;
   palette: PaletteSettings;
+  paletteMode: PaletteMode;
   outline: OutlineStyle;
+  shading: ShadingStyle;
   detail: DetailLevel;
   seed?: number | null;
+  seedLocked: boolean;
+  styleProfileId?: string | null;
   identityLock: IdentityLock;
   emotion: EmotionProfile;
   states: CharacterState[];
@@ -173,6 +205,7 @@ export interface PromptLayers {
   direction: string;
   expression: string;
   override: string;
+  negative: string;
   final: string;
 }
 
@@ -189,6 +222,24 @@ export interface StateTemplate {
   kind: StateKind;
 }
 
+export interface ProviderCapabilities {
+  supportsTextToImage: boolean;
+  supportsReferenceImage: boolean;
+  supportsImageToImage: boolean;
+  supportsDirectionGeneration: boolean;
+  supportsBatchDirections: boolean;
+  supportsTargetPalette: boolean;
+  supportsInitImage: boolean;
+  supportsInpainting: boolean;
+  supportsAnimation: boolean;
+  supportsSkeletonGuidance: boolean;
+  supportsNegativePrompt: boolean;
+  nativePixelOutput: boolean;
+  preferredSizes: number[];
+  preferredSize: number;
+  batchIsSequential: boolean;
+}
+
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -196,6 +247,22 @@ export interface ProviderInfo {
   supportsReference: boolean;
   nativePixelOutput: boolean;
   notes: string;
+  capabilities: ProviderCapabilities;
+}
+
+export interface GenerationJob {
+  id: string;
+  characterId: string;
+  operation: string;
+  status: JobStatus;
+  label: string;
+  current: number;
+  total: number | null;
+  currentItem: string;
+  error: string;
+  usedReference: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GenerationResult {
@@ -203,9 +270,58 @@ export interface GenerationResult {
   prompt: PromptLayers;
   usedReference: boolean;
   asset?: SpriteAsset | null;
+  job?: GenerationJob | null;
+}
+
+export interface StyleProfile {
+  id: string;
+  name: string;
+  palette: PaletteSettings;
+  camera: CameraAngle;
+  outline: OutlineStyle;
+  shading: ShadingStyle;
+  detail: DetailLevel;
+  spriteSize: number;
+  globalPositive: string;
+  globalNegative: string;
+  referencePaths: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryEntry {
+  id: string;
+  kind: "accepted" | "rejected";
+  characterId: string;
+  characterName: string;
+  prompt: string;
+  negativePrompt: string;
+  seed?: number | null;
+  outline: OutlineStyle;
+  shading: ShadingStyle;
+  detail: DetailLevel;
+  camera: CameraAngle;
+  palette: string[];
+  providerId: string;
+  stateName: string;
+  direction?: Direction | null;
+  rejectionReason?: RejectionReason | null;
+  customReason: string;
+  assetPath: string;
+  createdAt: string;
+}
+
+export interface MemorySuggestions {
+  recommendedSeeds: number[];
+  recommendedPalettes: string[][];
+  promptFragments: string[];
+  defaultOutline?: OutlineStyle;
+  defaultShading?: ShadingStyle;
+  defaultDetail?: DetailLevel;
+  notes: string[];
 }
 
 export interface WorkspaceSection {
-  id: "character" | "states" | "directions" | "emotion" | "head" | "generation" | "export";
+  id: "studio" | "identity" | "library" | "export";
   label: string;
 }

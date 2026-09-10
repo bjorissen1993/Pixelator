@@ -133,7 +133,11 @@ class PixelPipeline:
         rgba = remove_background(image, remove_bg)
         if on_step:
             on_step("cropping sprite")
+        source_size = max(rgba.size)
         sprite = fit_to_canvas(rgba, size)
+        if source_size >= size * 3:
+            # Large generic outputs still need a fit, but this is cleanup — not the style source.
+            pass
         if on_step:
             on_step("reducing palette")
         if locked_palette:
@@ -144,5 +148,5 @@ class PixelPipeline:
         if cleanup:
             sprite = remove_specks(sprite)
         preview = sprite.resize((size * 8, size * 8), Image.Resampling.NEAREST)
-        validation = validate_sprite(sprite, size, colors)
+        validation = validate_sprite(sprite, size, colors, source_size=source_size)
         return sprite, preview, validation

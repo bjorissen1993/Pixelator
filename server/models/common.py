@@ -55,6 +55,24 @@ class UpdateStateRequest(BaseModel):
     lookAtTargetEnabled: bool | None = None
 
 
+class ProviderCapabilities(BaseModel):
+    supportsTextToImage: bool = True
+    supportsReferenceImage: bool = False
+    supportsImageToImage: bool = False
+    supportsDirectionGeneration: bool = False
+    supportsBatchDirections: bool = False
+    supportsTargetPalette: bool = False
+    supportsInitImage: bool = False
+    supportsInpainting: bool = False
+    supportsAnimation: bool = False
+    supportsSkeletonGuidance: bool = False
+    supportsNegativePrompt: bool = False
+    nativePixelOutput: bool = False
+    preferredSizes: list[int] = Field(default_factory=lambda: [256])
+    preferredSize: int = 256
+    batchIsSequential: bool = True
+
+
 class ProviderInfo(BaseModel):
     id: str
     name: str
@@ -62,3 +80,4 @@ class ProviderInfo(BaseModel):
     supportsReference: bool
     nativePixelOutput: bool
     notes: str
+    capabilities: ProviderCapabilities = Field(default_factory=ProviderCapabilities)

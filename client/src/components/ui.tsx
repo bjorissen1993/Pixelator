@@ -128,7 +128,10 @@ export function GenerationStatus({
       <Spinner />
       <div>
         <strong>{progress?.label || busy}</strong>
-        <p>{current}</p>
+        <p>
+          {current}
+          {progress?.total ? ` · ${progress.current ?? 0}/${progress.total}` : ""}
+        </p>
         {generating && <PipelineSteps progress={progress} />}
       </div>
     </div>

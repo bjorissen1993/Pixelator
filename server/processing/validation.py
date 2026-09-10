@@ -3,7 +3,9 @@ from PIL import Image
 from models.character import QualityValidation, QualityWarning
 
 
-def validate_sprite(image: Image.Image, expected_size: int, palette_limit: int) -> QualityValidation:
+def validate_sprite(
+    image: Image.Image, expected_size: int, palette_limit: int, source_size: int | None = None
+) -> QualityValidation:
     warnings: list[QualityWarning] = []
     width, height = image.size
     if width != expected_size or height != expected_size:
@@ -48,6 +50,14 @@ def validate_sprite(image: Image.Image, expected_size: int, palette_limit: int) 
     if touches_edge:
         warnings.append(
             QualityWarning(code="touches_edges", message="Opaque pixels touch the canvas edge", severity="warning")
+        )
+    if source_size and source_size >= expected_size * 3:
+        warnings.append(
+            QualityWarning(
+                code="downscaled_source",
+                message=f"Source was {source_size}px then cleaned to {expected_size}px. Prefer a native/smaller pixel model.",
+                severity="warning",
+            )
         )
     if width != height:
         warnings.append(

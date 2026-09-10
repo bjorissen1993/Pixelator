@@ -123,8 +123,8 @@ export function StatesScreen() {
       {selected && (
         <p className="hint">
           Selected state: <strong>{selected.name}</strong>. Open Directions to regenerate a facing, or{" "}
-          <button className="link" onClick={() => setSection("generation")}>
-            Generation
+          <button className="link" onClick={() => setSection("studio")}>
+            Studio
           </button>
           .
         </p>

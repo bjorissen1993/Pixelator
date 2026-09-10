@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from models.enums import (
+    AssetStatus,
+    BodyTemplate,
     CameraAngle,
     DetailLevel,
     Direction,
@@ -10,6 +12,8 @@ from models.enums import (
     FacialRange,
     HeadVariant,
     OutlineStyle,
+    PaletteMode,
+    ShadingStyle,
     SpriteKind,
     StateKind,
     WarningSeverity,
@@ -78,14 +82,19 @@ class SpriteAsset(BaseModel):
     kind: SpriteKind = "full"
     path: str
     previewPath: str = ""
+    sourcePath: str = ""
     width: int
     height: int
     seed: int | None = None
     prompt: str = ""
+    negativePrompt: str = ""
     createdAt: str
     accepted: bool = False
+    status: AssetStatus = "pending"
     validation: QualityValidation | None = None
     head: HeadAnchor | None = None
+    providerId: str = ""
+    fromDirection: Direction | None = None
 
 
 class DirectionSlot(BaseModel):
@@ -96,6 +105,9 @@ class DirectionSlot(BaseModel):
     overlays: list[SpriteAsset] = Field(default_factory=list)
     headVariants: dict[HeadVariant, SpriteAsset] = Field(default_factory=dict)
     headAnchor: HeadAnchor = Field(default_factory=HeadAnchor)
+    status: AssetStatus = "missing"
+    locked: bool = False
+    seed: int | None = None
 
 
 class CharacterState(BaseModel):
@@ -114,6 +126,7 @@ class CharacterState(BaseModel):
     kind: StateKind = "static"
     createdAt: str
     directions: list[DirectionSlot] = Field(default_factory=list)
+    seed: int | None = None
 
 
 class AcceptedBase(BaseModel):
@@ -128,17 +141,23 @@ class CharacterProfile(BaseModel):
     slug: str
     name: str
     masterPrompt: str
+    negativePrompt: str = ""
     appearance: str = ""
     clothing: str = ""
     bodyType: str = ""
+    bodyTemplate: BodyTemplate = "custom"
     species: str = "human"
     spirit: SpiritSettings = Field(default_factory=SpiritSettings)
     spriteSize: int = Field(default=48, ge=16, le=128)
     camera: CameraAngle = "high-top-down"
     palette: PaletteSettings = Field(default_factory=PaletteSettings)
-    outline: OutlineStyle = "soft"
-    detail: DetailLevel = "high"
+    paletteMode: PaletteMode = "generated"
+    outline: OutlineStyle = "selective"
+    shading: ShadingStyle = "basic"
+    detail: DetailLevel = "medium"
     seed: int | None = None
+    seedLocked: bool = False
+    styleProfileId: str | None = None
     identityLock: IdentityLock = Field(default_factory=IdentityLock)
     emotion: EmotionProfile = Field(default_factory=EmotionProfile)
     states: list[CharacterState] = Field(default_factory=list)
@@ -146,3 +165,18 @@ class CharacterProfile(BaseModel):
     acceptedBase: AcceptedBase | None = None
     createdAt: str
     updatedAt: str
+
+    @field_validator("outline", mode="before")
+    @classmethod
+    def map_outline(cls, value: str) -> str:
+        return {"none": "lineless", "soft": "selective", "dark": "black"}.get(value, value)
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def map_detail(cls, value: str) -> str:
+        return {"simple": "low", "balanced": "medium"}.get(value, value)
+
+    @field_validator("camera", mode="before")
+    @classmethod
+    def map_camera(cls, value: str) -> str:
+        return {"front": "side"}.get(value, value)

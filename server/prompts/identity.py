@@ -7,6 +7,8 @@ def identity_constraints(character: CharacterProfile) -> str:
 
     if character.species:
         parts.append(f"{character.species}")
+    if character.bodyTemplate and character.bodyTemplate != "custom":
+        parts.append(character.bodyTemplate.replace("-", " "))
     if character.bodyType:
         parts.append(f"{character.bodyType} body")
 

@@ -12,10 +12,10 @@ export function ExportScreen() {
 
   return (
     <Section title="Phaser export">
-      <p className="hint">
-        Sprite sheets use direction order S, SW, W, NW, N, NE, E, SE. Rows are directions (or state+direction for the
-        full sheet), columns are animation frames. Empty cells stay transparent.
-      </p>
+        <p className="hint">
+          Sprite sheets use direction order S, SW, W, NW, N, NE, E, SE. Training export writes accepted sprites and
+          captions for future LoRA work — it does not train a model.
+        </p>
       <div className="action-grid">
         <Button
           variant="secondary"
@@ -65,6 +65,18 @@ export function ExportScreen() {
         </Button>
         <Button onClick={() => pull("Packaging ZIP", `/api/characters/${character.id}/export/zip`, `${slug}.zip`)}>
           ZIP character package
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            pull(
+              "Exporting training set",
+              `/api/characters/${character.id}/export/training-dataset`,
+              `${slug}-training.zip`,
+            )
+          }
+        >
+          Training dataset (accepted only)
         </Button>
       </div>
     </Section>

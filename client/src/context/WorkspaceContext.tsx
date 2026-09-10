@@ -13,12 +13,9 @@ import type {
 import { api } from "../api";
 
 export const SECTIONS: WorkspaceSection[] = [
-  { id: "character", label: "Character" },
-  { id: "states", label: "States" },
-  { id: "directions", label: "Directions" },
-  { id: "emotion", label: "Emotion Profile" },
-  { id: "head", label: "Head" },
-  { id: "generation", label: "Generation" },
+  { id: "studio", label: "Studio" },
+  { id: "identity", label: "Identity" },
+  { id: "library", label: "Library" },
   { id: "export", label: "Export" },
 ];
 
@@ -61,7 +58,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [character, setCharacter] = useState<CharacterProfile | null>(null);
   const [templates, setTemplates] = useState<StateTemplate[]>([]);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
-  const [section, setSection] = useState<WorkspaceSection["id"]>("character");
+  const [section, setSection] = useState<WorkspaceSection["id"]>("studio");
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
   const [selectedDirection, setSelectedDirection] = useState<Direction>("S");
   const [busy, setBusy] = useState("");
@@ -120,7 +117,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setProgress({
         active: true,
         label,
-        step: "generating source image",
+        step: "queued",
         steps: [
           "generating source image",
           "removing background",
@@ -138,13 +135,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         api
           .generationProgress(id)
           .then((next) => {
-            if (next.active || next.step) setProgress({ ...next, label: next.label || label });
+            if (next.active || next.step) setProgress((current) => ({ ...(current ?? next), ...next, label: next.label || label }));
           })
           .catch(() => undefined);
       }, 350);
     }
     try {
-      return await fn();
+      let result = await fn();
+      if (result && typeof result === "object" && result !== null && "job" in result) {
+        const started = result as { job?: { id?: string } };
+        if (started.job?.id) {
+          for (;;) {
+            const data = await api.getJob(started.job.id);
+            const job = data.job;
+            setProgress((current) => ({
+              active: job.status === "queued" || job.status === "generating" || job.status === "processing",
+              label: job.label || label,
+              step: job.currentItem || job.status,
+              steps: current?.steps ?? [],
+              stepIndex: current?.stepIndex ?? 0,
+              current: job.current,
+              total: job.total,
+              currentItem: job.currentItem,
+            }));
+            if (job.status === "completed") {
+              if (data.result) applyResult(data.result);
+              return (data.result as T) ?? result;
+            }
+            if (job.status === "failed") throw new Error(job.error || "Generation failed");
+            await new Promise((resolve) => setTimeout(resolve, 400));
+          }
+        }
+      }
+      return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return undefined;
@@ -154,7 +177,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setGenerating(false);
       setProgress(null);
     }
-  }, []);
+  }, [applyResult]);
 
   const value = useMemo<WorkspaceValue>(
     () => ({

@@ -82,8 +82,12 @@ def berwynn_profile() -> CharacterProfile:
         spriteSize=sprite_size,
         camera="high-top-down",
         palette=PaletteSettings(colorCount=40, locked=False, colors=[]),
-        outline="soft",
+        outline="selective",
+        shading="basic",
         detail="high",
+        negativePrompt="no armor, no legs, no boots, no weapons unless requested, no realistic rendering, no smooth gradients, no modern clothing",
+        bodyTemplate="custom",
+        paletteMode="generated",
         identityLock=IdentityLock(),
         emotion=EmotionProfile(
             expressiveness="low",

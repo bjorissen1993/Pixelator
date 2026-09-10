@@ -3,12 +3,10 @@ import { api } from "../api";
 import { SECTIONS, useWorkspace } from "../context/WorkspaceContext";
 import { GenerationStatus, Button, TextInput } from "./ui";
 import { CharacterScreen } from "./CharacterScreen";
-import { DirectionsScreen } from "./DirectionsScreen";
 import { EmotionScreen } from "./EmotionScreen";
+import { StudioScreen } from "./StudioScreen";
+import { LibraryScreen } from "./LibraryScreen";
 import { ExportScreen } from "./ExportScreen";
-import { GenerationPanel } from "./GenerationPanel";
-import { HeadScreen } from "./HeadScreen";
-import { StatesScreen } from "./StatesScreen";
 
 export function Workspace() {
   const {
@@ -81,7 +79,10 @@ export function Workspace() {
           <div>
             <h2>{character?.name ?? "No character"}</h2>
             <p>
-              {character?.species} · {character?.spriteSize}px · {character?.camera}
+              Provider {provider?.name ?? "unknown"} · {provider?.modelId}
+              {provider?.capabilities?.nativePixelOutput ? " · native pixel" : " · cleanup pipeline"}
+              {provider?.capabilities?.supportsReferenceImage ? " · reference img2img" : ""}
+              {provider?.capabilities?.batchIsSequential ? " · 8-dir sequential" : ""}
               {character?.acceptedBase ? " · base locked" : ""}
             </p>
           </div>
@@ -89,12 +90,14 @@ export function Workspace() {
         </header>
         <GenerationStatus error={error} busy={busy} generating={generating} progress={progress} />
         <div className="content">
-          {section === "character" && <CharacterScreen />}
-          {section === "states" && <StatesScreen />}
-          {section === "directions" && <DirectionsScreen />}
-          {section === "emotion" && <EmotionScreen />}
-          {section === "head" && <HeadScreen />}
-          {section === "generation" && <GenerationPanel />}
+          {section === "studio" && <StudioScreen />}
+          {section === "identity" && (
+            <>
+              <CharacterScreen />
+              <EmotionScreen />
+            </>
+          )}
+          {section === "library" && <LibraryScreen />}
           {section === "export" && <ExportScreen />}
         </div>
       </main>

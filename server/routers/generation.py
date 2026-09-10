@@ -2,15 +2,21 @@ from fastapi import APIRouter, Body, HTTPException
 
 from models.generation import (
     AcceptBaseRequest,
+    DirectionStatusRequest,
+    GenerateAnimationRequest,
     GenerateBaseRequest,
     GenerateDirectionRequest,
+    GenerateDirectionSetRequest,
     GenerateHeadRequest,
     GenerateMissingRequest,
     GenerateStateRequest,
+    InpaintRequest,
     MasterPromptRequest,
+    RefineRequest,
     UpdateAnchorsRequest,
 )
 from services import generation as generation_service
+from services import jobs
 from services import progress as progress_service
 
 router = APIRouter()
@@ -64,9 +70,114 @@ def discard_pending(character_id: str):
         _http(exc)
 
 
+@router.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    payload = {"job": job, "result": jobs.result(job_id)}
+    return payload
+
+
 @router.get("/api/characters/{character_id}/generation-progress")
 def generation_progress(character_id: str):
     return progress_service.get(character_id)
+
+
+@router.get("/api/characters/{character_id}/jobs")
+def character_jobs(character_id: str):
+    return {"active": jobs.active_for(character_id), "jobs": jobs.for_character(character_id)[:20]}
+
+
+@router.post("/api/characters/{character_id}/generate/directions")
+def generate_direction_set(character_id: str, payload: GenerateDirectionSetRequest = Body(default_factory=GenerateDirectionSetRequest)):
+    try:
+        return generation_service.start_job(
+            character_id,
+            "directions",
+            "Generate 8 Directions",
+            8,
+            lambda job_id: generation_service.generate_direction_set(
+                character_id, payload.stateId, payload.useReference, payload.seed, payload.override, payload.strength, job_id
+            ),
+        )
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/directions/accept")
+def accept_direction(character_id: str, payload: DirectionStatusRequest):
+    try:
+        return generation_service.set_direction_status(character_id, payload.stateId, payload.direction, "accepted")
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/directions/reject")
+def reject_direction(character_id: str, payload: DirectionStatusRequest):
+    try:
+        return generation_service.set_direction_status(
+            character_id, payload.stateId, payload.direction, "rejected", payload.reason, payload.customReason
+        )
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/directions/lock")
+def lock_direction(character_id: str, payload: DirectionStatusRequest):
+    try:
+        return generation_service.set_direction_status(character_id, payload.stateId, payload.direction, "locked")
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/directions/unlock")
+def unlock_direction(character_id: str, payload: DirectionStatusRequest):
+    try:
+        return generation_service.set_direction_status(character_id, payload.stateId, payload.direction, "unlocked")
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/generate/animation")
+def generate_animation(character_id: str, payload: GenerateAnimationRequest):
+    try:
+        return generation_service.start_job(
+            character_id,
+            "animation",
+            "Generating animation",
+            payload.frameCount,
+            lambda job_id: generation_service.generate_animation(
+                character_id, payload.stateId, payload.direction, payload.frameCount, payload.action, payload.useReference, payload.seed, job_id
+            ),
+        )
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/refine")
+def refine(character_id: str, payload: RefineRequest):
+    try:
+        return generation_service.refine_asset(
+            character_id,
+            payload.stateId,
+            payload.direction,
+            payload.frameIndex,
+            payload.strength,
+            payload.seed,
+            payload.override,
+            payload.useAsReference,
+        )
+    except Exception as exc:
+        _http(exc)
+
+
+@router.post("/api/characters/{character_id}/inpaint")
+def inpaint(character_id: str, payload: InpaintRequest):
+    try:
+        generation_service.inpaint_placeholder()
+    except Exception as exc:
+        _http(exc)
 
 
 @router.post("/api/characters/{character_id}/generate-variation")

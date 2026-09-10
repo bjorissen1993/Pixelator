@@ -43,6 +43,11 @@ export function CharacterScreen() {
         outline: draft.outline,
         detail: draft.detail,
         seed: draft.seed,
+        seedLocked: draft.seedLocked,
+        negativePrompt: draft.negativePrompt,
+        shading: draft.shading,
+        paletteMode: draft.paletteMode,
+        bodyTemplate: draft.bodyTemplate,
       });
       setCharacter(saved);
     });
@@ -89,9 +94,20 @@ export function CharacterScreen() {
               onChange={(event) => set("seed", event.target.value === "" ? null : Number(event.target.value))}
             />
           </Field>
+          <Field label="Body template">
+            <Select value={draft.bodyTemplate ?? "custom"} onChange={(event) => set("bodyTemplate", event.target.value as CharacterProfile["bodyTemplate"])}>
+              <option value="bipedal">Bipedal</option>
+              <option value="semi-chibi-bipedal">Semi-chibi bipedal</option>
+              <option value="quadrupedal">Quadrupedal</option>
+              <option value="custom">Custom</option>
+            </Select>
+          </Field>
         </div>
         <Field label="Master prompt">
           <Area rows={5} value={draft.masterPrompt} onChange={(event) => set("masterPrompt", event.target.value)} />
+        </Field>
+        <Field label="Negative description">
+          <Area rows={3} value={draft.negativePrompt ?? ""} onChange={(event) => set("negativePrompt", event.target.value)} />
         </Field>
         <p className="hint">
           Changing the master prompt never deletes accepted sprites. Choose how it should apply:
@@ -134,7 +150,7 @@ export function CharacterScreen() {
             <Select value={draft.camera} onChange={(event) => set("camera", event.target.value as CharacterProfile["camera"])}>
               <option value="high-top-down">High top-down</option>
               <option value="low-top-down">Low top-down</option>
-              <option value="front">Front</option>
+              <option value="side">Side</option>
             </Select>
           </Field>
           <Field label="Sprite size">
@@ -148,16 +164,33 @@ export function CharacterScreen() {
           </Field>
           <Field label="Detail">
             <Select value={draft.detail} onChange={(event) => set("detail", event.target.value as CharacterProfile["detail"])}>
-              <option value="simple">Simple</option>
-              <option value="balanced">Balanced</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
               <option value="high">High</option>
             </Select>
           </Field>
           <Field label="Outline">
             <Select value={draft.outline} onChange={(event) => set("outline", event.target.value as CharacterProfile["outline"])}>
+              <option value="black">Black</option>
+              <option value="colored">Colored</option>
+              <option value="selective">Selective</option>
+              <option value="lineless">Lineless</option>
+            </Select>
+          </Field>
+          <Field label="Shading">
+            <Select value={draft.shading ?? "basic"} onChange={(event) => set("shading", event.target.value as CharacterProfile["shading"])}>
               <option value="none">None</option>
-              <option value="soft">Soft</option>
-              <option value="dark">Dark</option>
+              <option value="basic">Basic</option>
+              <option value="medium">Medium</option>
+              <option value="detailed">Detailed</option>
+            </Select>
+          </Field>
+          <Field label="Palette mode">
+            <Select value={draft.paletteMode ?? "generated"} onChange={(event) => set("paletteMode", event.target.value as CharacterProfile["paletteMode"])}>
+              <option value="generated">Generated</option>
+              <option value="project">Project palette</option>
+              <option value="custom">Custom palette</option>
+              <option value="locked">Locked character palette</option>
             </Select>
           </Field>
           <Field label="Palette colors">
@@ -170,6 +203,11 @@ export function CharacterScreen() {
             />
           </Field>
         </div>
+        <Toggle
+          label="Lock seed"
+          checked={draft.seedLocked ?? false}
+          onChange={(value) => set("seedLocked", value)}
+        />
         <Toggle
           label="Spirit form"
           checked={draft.spirit.enabled}
