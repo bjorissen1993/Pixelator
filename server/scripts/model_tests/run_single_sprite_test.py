@@ -69,15 +69,21 @@ def parse_seeds(raw: str, fallback: tuple[int, ...]) -> tuple[int, ...]:
     return seeds
 
 
-def warn_if_rejected(model_id: str) -> None:
-    info = test_config.REJECTED_SOUTH_BASE_MODELS.get(model_id)
-    if not info:
-        return
-    print(f"WARNING: {model_id} is rejected as Pixelator's canonical South-base generator.")
-    for reason in info.get("reasons", []):
-        print(f"  - {reason}")
-    print("This run is comparison-only. Do not integrate it into production.")
-    print()
+def warn_if_rejected(model_id: str, lora_id: str = "") -> None:
+    keys = [key for key in (model_id, lora_id) if key]
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
+        info = test_config.REJECTED_SOUTH_BASE_MODELS.get(key)
+        if not info:
+            continue
+        print(f"WARNING: {key} is rejected as Pixelator's canonical South-base generator.")
+        for reason in info.get("reasons", []):
+            print(f"  - {reason}")
+        print("This run is comparison-only. Do not integrate it into production.")
+        print()
 
 
 def cfg_get(mod, name, default=None):
@@ -125,7 +131,7 @@ def main() -> int:
             print("LoRA loader: PEFT UNet adapter (PeftModel.from_pretrained)")
         else:
             print("LoRA loader: Diffusers load_lora_weights")
-    warn_if_rejected(model_id)
+    warn_if_rejected(model_id, lora_id)
 
     try:
         import torch

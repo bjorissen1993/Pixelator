@@ -18,27 +18,18 @@ STEPS = 30
 GUIDANCE = 7.5
 SEEDS = (12345, 22345, 32345, 42345)
 
-# Two prompt variants x four seeds = 8 images. No spritesheet trigger words.
-PROMPTS = {
-    "A": (
-        "single full body pixel art sprite, one elderly male village chief spirit, "
-        "front facing, south facing, centered, one character only, full body visible, "
-        "worn dark tunic, faded mantle, grey beard, spectral tail instead of legs, "
-        "plain background, game sprite"
-    ),
-    "B": (
-        "single character pixel art game sprite, full body, one elderly male village chief spirit, "
-        "south facing, front view, centered in frame, entire silhouette visible, "
-        "short messy grey hair, thick rough grey beard, worn dark village tunic, faded chief mantle, "
-        "spectral ghost tail instead of legs, no armor, plain simple background"
-    ),
-}
+# Short Berwynn prompt kept under SD1.5 CLIP's 77-token window.
+# Configs should prepend their own trigger; do not reuse pixelart_style (Varo).
+PROMPT = (
+    "full body elderly male spirit, front facing, grey hair, thick grey beard, "
+    "stern kind face, worn dark village tunic, faded mantle, spectral blue ghost tail instead of legs, "
+    "no armor, centered, single character, RPG sprite"
+)
+PROMPTS = {"A": PROMPT}
 
 NEGATIVE_PROMPT = (
-    "sprite sheet, spritesheet, collage, grid, contact sheet, multiple views, "
-    "multiple poses, multiple characters, duplicate character, portrait, bust, "
-    "close-up, cropped, UI frame, border, text, watermark, realistic, painterly, "
-    "3d render, armor, boots, weapon, SDXL, photographic"
+    "portrait, bust, close-up, cropped, armor, helmet, weapon, legs, boots, "
+    "multiple characters, spritesheet, collage, realistic, 3d, painterly, blurry, text"
 )
 
 # Isolated South-base tests are SD1.5-class unless this is explicitly enabled.
@@ -64,6 +55,27 @@ REJECTED_SOUTH_BASE_MODELS = {
             "Pixel-art quality was better than the legacy SDXL-Turbo / SDXL-base downscale path, "
             "but the checkpoint still behaves as a sprite-sheet generator. Keep the isolated "
             "outputs for comparison. Do not integrate as the default South-base engine."
+        ),
+    },
+    "VaroDZAKY/Varo_pixel_Art": {
+        "status": "rejected",
+        "role": "canonical South-base character generator",
+        "date": "2026-09-11",
+        "base_model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        "keep_outputs": [
+            "server/test_outputs/varodzak_pixel_art/",
+            "server/test_outputs/varodzak_pixel_art_short_prompt/",
+        ],
+        "reasons": [
+            "Single-character output works and pixel-art styling is acceptable",
+            "Character adherence is poor even when the full short prompt fits in CLIP",
+            "Berwynn's defining silhouette is not followed: spectral ghost tail is ignored and legs remain",
+            "Clothing identity and old village-chief appearance are inconsistent",
+            "Results vary too heavily between seeds",
+        ],
+        "notes": (
+            "Do not integrate this LoRA into production and do not reuse it as a fallback. "
+            "Keep the isolated outputs for comparison."
         ),
     },
 }

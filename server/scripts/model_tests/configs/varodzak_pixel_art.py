@@ -1,6 +1,7 @@
-"""Isolated candidate: SD 1.5 + VaroDZAKY/Varo_pixel_Art LoRA.
+"""REJECTED isolated candidate: SD 1.5 + VaroDZAKY/Varo_pixel_Art LoRA.
 
-Not Pixelator's production South-base engine. Manual inspection required.
+Do not integrate into production and do not reuse as a fallback.
+Kept so comparison reruns stay possible. Manual inspection only.
 """
 
 MODEL_ID = "stable-diffusion-v1-5/stable-diffusion-v1-5"
