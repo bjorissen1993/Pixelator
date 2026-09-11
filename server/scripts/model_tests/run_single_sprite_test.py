@@ -15,6 +15,7 @@ import importlib
 import sys
 import time
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -30,6 +31,7 @@ from helpers import (
     load_text2image_pipeline,
     output_dir_for,
     require_cuda,
+    sha256_file,
     slugify_model_id,
     strength_tag,
     write_metadata,
@@ -117,9 +119,14 @@ def main() -> int:
 
     print("Isolated single-sprite model test")
     print("Not Pixelator. No IP-Adapter, ControlNet, or rotation.")
-    if args.config:
-        print(f"config: {args.config}")
-    print(f"output dir: {out_dir}")
+    print(f"config name: {args.config or '(none)'}")
+    print(f"model_id: {model_id}")
+    print(f"output directory: {out_dir}")
+    print(f"positive prompt: {prompt or next(iter(prompts.values()), '')}")
+    print(f"negative prompt: {negative}")
+    print(f"seeds: {', '.join(str(seed) for seed in seeds)}")
+    print(f"width/height: {width}x{height}")
+    print(f"steps: {steps}")
     print()
 
     if not model_id:
@@ -160,6 +167,7 @@ def main() -> int:
         print()
 
         metadata = {
+            "run_id": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
             "base_model": model_id,
             "model_id": model_id,
             "loaded_model_id": "",
@@ -239,12 +247,18 @@ def main() -> int:
         if len(jobs) < 8:
             print(f"NOTE: this run will write {len(jobs)} images (8 expected when a strength sweep is supported).")
 
+        print(f"run_id: {metadata['run_id']}")
         for label, text, seed, strength in jobs:
             filename = f"{label}_seed{seed}.png" if (strength is not None or label.startswith("strength")) else f"{label}_{seed}.png"
             path = out_dir / filename
             extra = {}
             print(f"--- {filename} ---")
+            print("GENERATING NEW IMAGE FROM MODEL")
+            print(f"model id: {loaded_id}")
             print(f"generation seed: {seed}")
+            print(f"output path: {path}")
+            if path.exists():
+                print("OVERWRITING EXISTING OUTPUT")
             if strength is not None and lora_loader != "peft_unet":
                 print(f"LoRA strength: {strength}")
                 extra = apply_lora_strength(pipe, adapter_name, strength)
@@ -266,6 +280,7 @@ def main() -> int:
             ).images[0]
             elapsed = time.perf_counter() - started
             image.save(path)
+            digest = sha256_file(path)
             memory = cuda_memory(torch)
             metadata["runs"].append(
                 {
@@ -279,12 +294,14 @@ def main() -> int:
                     "generation_time": round(elapsed, 2),
                     "cuda_memory_usage": memory,
                     "output_path": str(path),
+                    "sha256": digest,
                     "device": device,
                     "torch_version": torch.__version__,
                 }
             )
             write_metadata(metadata_path, metadata)
             print(f"saved: {path}")
+            print(f"sha256: {digest}")
             print(f"elapsed generation time: {elapsed:.2f}s")
             print(f"CUDA memory usage: {memory}")
             print()
