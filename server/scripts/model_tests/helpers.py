@@ -62,6 +62,11 @@ def cuda_memory(torch_mod) -> str:
     return f"{used / (1024 ** 3):.2f} GB ({used} bytes)"
 
 
+def require_cuda(torch_mod) -> None:
+    if not torch_mod.cuda.is_available():
+        raise RuntimeError("Hard fail: CUDA is unavailable. This isolated test requires a GPU.")
+
+
 def write_metadata(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -86,3 +91,51 @@ def load_text2image_pipeline(model_id: str, dtype, allow_sdxl: bool):
             pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
     assert_exact_model(pipe, model_id, allow_sdxl=allow_sdxl)
     return pipe
+
+
+def load_lora_or_fail(pipe, lora_id: str, adapter_name: str = "candidate"):
+    if not lora_id:
+        raise RuntimeError("Hard fail: LoRA id is empty.")
+    if not hasattr(pipe, "load_lora_weights"):
+        raise RuntimeError("Hard fail: this pipeline cannot load LoRA weights.")
+    print(f"requested LoRA: {lora_id}")
+    try:
+        pipe.load_lora_weights(lora_id, adapter_name=adapter_name)
+    except TypeError:
+        pipe.load_lora_weights(lora_id)
+    except Exception as exc:
+        raise RuntimeError(f"Hard fail: LoRA {lora_id!r} failed to load: {exc}") from exc
+    adapters = None
+    if hasattr(pipe, "get_list_adapters"):
+        try:
+            adapters = pipe.get_list_adapters()
+        except Exception:
+            adapters = None
+    if hasattr(pipe, "get_active_adapters"):
+        try:
+            adapters = adapters or pipe.get_active_adapters()
+        except Exception:
+            pass
+    print(f"actual loaded LoRA: {lora_id}")
+    print(f"LoRA adapters: {adapters}")
+    if adapters in ([], {}, ()):
+        raise RuntimeError(f"Hard fail: LoRA {lora_id!r} loaded without any adapters.")
+    return adapter_name
+
+
+def apply_lora_strength(pipe, adapter_name: str, strength: float) -> dict:
+    kwargs = {}
+    try:
+        if hasattr(pipe, "set_adapters"):
+            pipe.set_adapters(adapter_name, adapter_weights=strength)
+            print(f"LoRA strength via set_adapters: {strength}")
+            return kwargs
+    except Exception:
+        pass
+    kwargs["cross_attention_kwargs"] = {"scale": float(strength)}
+    print(f"LoRA strength via cross_attention_kwargs.scale: {strength}")
+    return kwargs
+
+
+def strength_tag(strength: float) -> str:
+    return f"strength{int(round(strength * 100)):03d}"

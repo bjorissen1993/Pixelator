@@ -1,16 +1,17 @@
 """Isolated single-sprite checkpoint harness.
 
-Not wired into Pixelator. No LoRA, IP-Adapter, ControlNet, rotation, or 8-dir generation.
+Not wired into Pixelator. No IP-Adapter, ControlNet, rotation, or 8-dir generation.
 Saves raw 512px candidates plus metadata.json under server/test_outputs/<output-name>/.
 
 Examples:
   server\\.venv\\Scripts\\python.exe server\\scripts\\model_tests\\run_single_sprite_test.py --model OWNER/NAME
-  server\\.venv\\Scripts\\python.exe server\\scripts\\model_tests\\run_single_sprite_test.py --model OWNER/NAME --output-name my_candidate
+  server\\.venv\\Scripts\\python.exe server\\scripts\\model_tests\\run_single_sprite_test.py --config varodzak_pixel_art
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 import time
 import traceback
@@ -20,30 +21,47 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_config
 from helpers import (
+    apply_lora_strength,
     assert_exact_model,
     cuda_memory,
+    load_lora_or_fail,
     load_text2image_pipeline,
     output_dir_for,
+    require_cuda,
     slugify_model_id,
+    strength_tag,
     write_metadata,
 )
 
 
+def load_named_config(name: str):
+    if not name:
+        return None
+    try:
+        return importlib.import_module(f"configs.{name}")
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"Hard fail: unknown test config {name!r}") from exc
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Isolated single-sprite model test (not Pixelator).")
-    parser.add_argument("--model", default=test_config.MODEL_ID, help="Hugging Face model id or local folder")
-    parser.add_argument("--output-name", default=test_config.OUTPUT_NAME, help="Folder name under server/test_outputs/")
-    parser.add_argument("--width", type=int, default=test_config.WIDTH)
-    parser.add_argument("--height", type=int, default=test_config.HEIGHT)
-    parser.add_argument("--steps", type=int, default=test_config.STEPS)
-    parser.add_argument("--guidance", type=float, default=test_config.GUIDANCE)
-    parser.add_argument("--seeds", default=",".join(str(seed) for seed in test_config.SEEDS))
-    parser.add_argument("--allow-sdxl", action="store_true", default=test_config.ALLOW_SDXL)
+    parser.add_argument("--config", default="", help="Preset module under configs/, e.g. varodzak_pixel_art")
+    parser.add_argument("--model", default="", help="Hugging Face model id or local folder")
+    parser.add_argument("--lora", default="", help="Optional LoRA id. Empty means no LoRA.")
+    parser.add_argument("--output-name", default="", help="Folder name under server/test_outputs/")
+    parser.add_argument("--width", type=int, default=0)
+    parser.add_argument("--height", type=int, default=0)
+    parser.add_argument("--steps", type=int, default=0)
+    parser.add_argument("--guidance", type=float, default=0)
+    parser.add_argument("--seeds", default="")
+    parser.add_argument("--allow-sdxl", action="store_true", default=False)
+    parser.add_argument("--require-cuda", action="store_true", default=False)
     return parser.parse_args()
 
 
-def parse_seeds(raw: str) -> tuple[int, ...]:
-    seeds = tuple(int(part.strip()) for part in raw.split(",") if part.strip())
+def parse_seeds(raw: str, fallback: tuple[int, ...]) -> tuple[int, ...]:
+    source = raw.strip() if raw.strip() else ",".join(str(seed) for seed in fallback)
+    seeds = tuple(int(part.strip()) for part in source.split(",") if part.strip())
     if not seeds:
         raise RuntimeError("No seeds configured.")
     return seeds
@@ -60,26 +78,45 @@ def warn_if_rejected(model_id: str) -> None:
     print()
 
 
+def cfg_get(mod, name, default=None):
+    if mod is None:
+        return default
+    return getattr(mod, name, default)
+
+
 def main() -> int:
     args = parse_args()
-    model_id = (args.model or "").strip()
-    seeds = parse_seeds(args.seeds)
-    prompts = test_config.PROMPTS
-    if len(prompts) * len(seeds) < 8:
-        print("WARNING: configured variants x seeds is under 8 images.")
-    output_name = (args.output_name or "").strip() or slugify_model_id(model_id)
+    preset = load_named_config(args.config) if args.config else None
+
+    model_id = (args.model or cfg_get(preset, "MODEL_ID") or test_config.MODEL_ID or "").strip()
+    lora_id = (args.lora or cfg_get(preset, "LORA") or "").strip()
+    adapter_name = cfg_get(preset, "LORA_ADAPTER_NAME", "candidate")
+    lora_strengths = tuple(cfg_get(preset, "LORA_STRENGTHS") or ())
+    seeds = parse_seeds(args.seeds, cfg_get(preset, "SEEDS") or test_config.SEEDS)
+    width = args.width or cfg_get(preset, "WIDTH") or test_config.WIDTH
+    height = args.height or cfg_get(preset, "HEIGHT") or test_config.HEIGHT
+    steps = args.steps or cfg_get(preset, "STEPS") or test_config.STEPS
+    guidance = args.guidance or cfg_get(preset, "GUIDANCE") or test_config.GUIDANCE
+    allow_sdxl = args.allow_sdxl or bool(cfg_get(preset, "ALLOW_SDXL", test_config.ALLOW_SDXL))
+    require_gpu = args.require_cuda or bool(cfg_get(preset, "REQUIRE_CUDA", False))
+    negative = cfg_get(preset, "NEGATIVE_PROMPT") or test_config.NEGATIVE_PROMPT
+    prompt = cfg_get(preset, "PROMPT")
+    prompts = {"A": prompt} if prompt else dict(cfg_get(preset, "PROMPTS") or test_config.PROMPTS)
+    output_name = (args.output_name or cfg_get(preset, "OUTPUT_NAME") or "").strip() or slugify_model_id(model_id)
     out_dir = output_dir_for(output_name)
     metadata_path = out_dir / "metadata.json"
 
     print("Isolated single-sprite model test")
-    print("Not Pixelator. No LoRA, IP-Adapter, ControlNet, or rotation.")
+    print("Not Pixelator. No IP-Adapter, ControlNet, or rotation.")
+    if args.config:
+        print(f"config: {args.config}")
     print(f"output dir: {out_dir}")
     print()
 
     if not model_id:
-        print("Hard fail: set MODEL_ID in test_config.py or pass --model OWNER/NAME", file=sys.stderr)
+        print("Hard fail: set MODEL_ID, pass --model, or use --config", file=sys.stderr)
         return 1
-    print("adapters: LoRA=off IP-Adapter=off ControlNet=off")
+    print(f"adapters: LoRA={'on ' + lora_id if lora_id else 'off'} IP-Adapter=off ControlNet=off")
     warn_if_rejected(model_id)
 
     try:
@@ -89,39 +126,46 @@ def main() -> int:
         traceback.print_exc()
         return 1
 
-    cuda_ok = torch.cuda.is_available()
-    device = "cuda" if cuda_ok else "cpu"
-    dtype = torch.float16 if cuda_ok else torch.float32
-    gpu_name = torch.cuda.get_device_name(0) if cuda_ok else "none"
-    print(f"PyTorch version: {torch.__version__}")
-    print(f"CUDA available: {cuda_ok}")
-    print(f"GPU name: {gpu_name}")
-    print(f"device: {device}")
-    print(f"dtype: {dtype}")
-    if not cuda_ok:
-        print("WARNING: CUDA is not available. Falling back to CPU float32.")
-    print()
-
-    metadata = {
-        "model_id": model_id,
-        "loaded_model_id": "",
-        "pipeline_class": "",
-        "device": device,
-        "gpu_name": gpu_name,
-        "torch_version": torch.__version__,
-        "width": args.width,
-        "height": args.height,
-        "steps": args.steps,
-        "guidance": args.guidance,
-        "negative_prompt": test_config.NEGATIVE_PROMPT,
-        "allow_sdxl": bool(args.allow_sdxl),
-        "lora": False,
-        "ip_adapter": False,
-        "controlnet": False,
-        "runs": [],
-    }
-
+    metadata = {"runs": []}
     try:
+        if require_gpu:
+            require_cuda(torch)
+        cuda_ok = torch.cuda.is_available()
+        if require_gpu and not cuda_ok:
+            raise RuntimeError("Hard fail: CUDA is unavailable.")
+        device = "cuda" if cuda_ok else "cpu"
+        dtype = torch.float16 if cuda_ok else torch.float32
+        gpu_name = torch.cuda.get_device_name(0) if cuda_ok else "none"
+        print(f"PyTorch version: {torch.__version__}")
+        print(f"CUDA available: {cuda_ok}")
+        print(f"GPU name: {gpu_name}")
+        print(f"device: {device}")
+        print(f"dtype: {dtype}")
+        if not cuda_ok:
+            print("WARNING: CUDA is not available. Falling back to CPU float32.")
+        print()
+
+        metadata = {
+            "base_model": model_id,
+            "model_id": model_id,
+            "loaded_model_id": "",
+            "lora": lora_id or None,
+            "lora_strengths": list(lora_strengths) if lora_strengths else None,
+            "pipeline_class": "",
+            "device": device,
+            "gpu_name": gpu_name,
+            "torch_version": torch.__version__,
+            "width": width,
+            "height": height,
+            "steps": steps,
+            "guidance": guidance,
+            "negative_prompt": negative,
+            "allow_sdxl": bool(allow_sdxl),
+            "ip_adapter": False,
+            "controlnet": False,
+            "runs": [],
+        }
+
         out_dir.mkdir(parents=True, exist_ok=True)
         if cuda_ok:
             torch.cuda.reset_peak_memory_stats()
@@ -129,9 +173,13 @@ def main() -> int:
 
         print("Loading pipeline…")
         load_started = time.perf_counter()
-        pipe = load_text2image_pipeline(model_id, dtype, allow_sdxl=bool(args.allow_sdxl))
-        loaded_id = assert_exact_model(pipe, model_id, allow_sdxl=bool(args.allow_sdxl))
+        pipe = load_text2image_pipeline(model_id, dtype, allow_sdxl=bool(allow_sdxl))
+        loaded_id = assert_exact_model(pipe, model_id, allow_sdxl=bool(allow_sdxl))
         pipe = pipe.to(device)
+        if lora_id:
+            load_lora_or_fail(pipe, lora_id, adapter_name=adapter_name)
+        elif cfg_get(preset, "LORA"):
+            raise RuntimeError("Hard fail: config requires a LoRA but none was loaded.")
         if hasattr(pipe, "set_progress_bar_config"):
             pipe.set_progress_bar_config(disable=False)
         metadata["loaded_model_id"] = loaded_id
@@ -141,47 +189,65 @@ def main() -> int:
         print(f"Pipeline loaded in {metadata['load_seconds']:.1f}s")
         print()
 
-        for variant, prompt in prompts.items():
-            for seed in seeds:
-                filename = f"variant{variant}_{seed}.png"
-                path = out_dir / filename
-                print(f"--- variant {variant} seed {seed} ---")
-                print(f"generation seed: {seed}")
-                generator = torch.Generator(device=device).manual_seed(seed)
-                if cuda_ok:
-                    torch.cuda.reset_peak_memory_stats()
-                started = time.perf_counter()
-                image = pipe(
-                    prompt=prompt,
-                    negative_prompt=test_config.NEGATIVE_PROMPT,
-                    width=args.width,
-                    height=args.height,
-                    num_inference_steps=args.steps,
-                    guidance_scale=args.guidance,
-                    generator=generator,
-                ).images[0]
-                elapsed = time.perf_counter() - started
-                image.save(path)
-                memory = cuda_memory(torch)
-                metadata["runs"].append(
-                    {
-                        "model_id": loaded_id,
-                        "prompt": prompt,
-                        "negative_prompt": test_config.NEGATIVE_PROMPT,
-                        "seed": seed,
-                        "variant": variant,
-                        "output_file_path": str(path),
-                        "generation_time": round(elapsed, 2),
-                        "cuda_memory_usage": memory,
-                        "device": device,
-                        "torch_version": torch.__version__,
-                    }
-                )
-                write_metadata(metadata_path, metadata)
-                print(f"saved: {path}")
-                print(f"elapsed generation time: {elapsed:.2f}s")
-                print(f"CUDA memory usage: {memory}")
-                print()
+        jobs = []
+        if lora_id and lora_strengths:
+            single_prompt = prompt or next(iter(prompts.values()))
+            for strength in lora_strengths:
+                for seed in seeds:
+                    jobs.append((strength_tag(strength), single_prompt, seed, float(strength)))
+        else:
+            for variant, text in prompts.items():
+                for seed in seeds:
+                    jobs.append((f"variant{variant}", text, seed, None))
+        if len(jobs) < 8:
+            print(f"WARNING: this run will write {len(jobs)} images, expected 8.")
+
+        for label, text, seed, strength in jobs:
+            filename = f"{label}_seed{seed}.png" if strength is not None else f"{label}_{seed}.png"
+            path = out_dir / filename
+            extra = {}
+            print(f"--- {filename} ---")
+            print(f"generation seed: {seed}")
+            if strength is not None:
+                print(f"LoRA strength: {strength}")
+                extra = apply_lora_strength(pipe, adapter_name, strength)
+            generator = torch.Generator(device=device).manual_seed(seed)
+            if cuda_ok:
+                torch.cuda.reset_peak_memory_stats()
+            started = time.perf_counter()
+            image = pipe(
+                prompt=text,
+                negative_prompt=negative,
+                width=width,
+                height=height,
+                num_inference_steps=steps,
+                guidance_scale=guidance,
+                generator=generator,
+                **extra,
+            ).images[0]
+            elapsed = time.perf_counter() - started
+            image.save(path)
+            memory = cuda_memory(torch)
+            metadata["runs"].append(
+                {
+                    "base_model": loaded_id,
+                    "lora": lora_id or None,
+                    "lora_strength": strength,
+                    "prompt": text,
+                    "negative_prompt": negative,
+                    "seed": seed,
+                    "generation_time": round(elapsed, 2),
+                    "cuda_memory_usage": memory,
+                    "output_path": str(path),
+                    "device": device,
+                    "torch_version": torch.__version__,
+                }
+            )
+            write_metadata(metadata_path, metadata)
+            print(f"saved: {path}")
+            print(f"elapsed generation time: {elapsed:.2f}s")
+            print(f"CUDA memory usage: {memory}")
+            print()
 
         print("Done. Inspect the raw PNGs before any Pixelator integration.")
         print(f"metadata: {metadata_path}")
