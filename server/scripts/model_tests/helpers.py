@@ -93,9 +93,100 @@ def load_text2image_pipeline(model_id: str, dtype, allow_sdxl: bool):
     return pipe
 
 
+def _summarize_peft_config(unet) -> dict:
+    raw = getattr(unet, "peft_config", None)
+    if not raw:
+        return {}
+    summary = {}
+    for name, item in dict(raw).items():
+        target = getattr(item, "target_modules", None)
+        if isinstance(target, (set, tuple, list)):
+            target = sorted(str(x) for x in target)
+        summary[str(name)] = {
+            "peft_type": str(getattr(item, "peft_type", item)),
+            "r": getattr(item, "r", None),
+            "lora_alpha": getattr(item, "lora_alpha", None),
+            "target_modules": target,
+        }
+    return summary
+
+
+def inspect_peft_unet(unet) -> dict:
+    from peft import PeftModel
+
+    class_name = type(unet).__name__
+    module_name = f"{type(unet).__module__}.{class_name}"
+    print("LoRA loader: PEFT UNet adapter (PeftModel.from_pretrained)")
+    print(f"UNet class: {module_name}")
+    peft_config = _summarize_peft_config(unet)
+    print(f"peft_config: {peft_config or '{}'}")
+    adapters = list(peft_config.keys()) if peft_config else []
+    active = getattr(unet, "active_adapters", None)
+    if active:
+        adapters = list(dict.fromkeys([*adapters, *(list(active) if not isinstance(active, str) else [active])]))
+    print(f"available adapter names: {adapters or '(none)'}")
+    total = sum(param.numel() for param in unet.parameters())
+    trainable = sum(param.numel() for param in unet.parameters() if param.requires_grad)
+    adapter_params = sum(
+        param.numel() for name, param in unet.named_parameters() if "lora_" in name.lower() or ".lora" in name.lower()
+    )
+    print(f"UNet parameters: trainable={trainable:,} total={total:,} adapter-like={adapter_params:,}")
+    if not isinstance(unet, PeftModel) and "Peft" not in class_name:
+        raise RuntimeError(
+            f"Hard fail: UNet remains an ordinary unwrapped model ({module_name}). PEFT adapter did not attach."
+        )
+    if not peft_config:
+        raise RuntimeError("Hard fail: peft_config is empty after PeftModel.from_pretrained.")
+    if adapter_params == 0:
+        print("WARNING: no lora_* parameter names were found; relying on peft_config presence.")
+    return {
+        "unet_class": module_name,
+        "peft_config": peft_config,
+        "adapter_names": adapters,
+        "trainable_parameters": trainable,
+        "total_parameters": total,
+        "adapter_parameters": adapter_params,
+    }
+
+
+def peft_runtime_scale_supported(unet) -> bool:
+    # Diffusers set_adapters / cross_attention_kwargs.scale do not control a PEFT-wrapped UNet.
+    # Do not walk internal LoraLayer.scaling; that would be fake strength control.
+    return False
+
+
+def load_peft_unet_adapter(pipe, lora_id: str, device: str, dtype):
+    if not lora_id:
+        raise RuntimeError("Hard fail: LoRA id is empty.")
+    print("LoRA loader: PEFT UNet adapter (PeftModel.from_pretrained)")
+    print(f"requested LoRA: {lora_id}")
+    print("Diffusers load_lora_weights: skipped")
+    try:
+        from peft import PeftModel
+    except Exception as exc:
+        raise RuntimeError(f"Hard fail: could not import peft.PeftModel: {exc}") from exc
+    try:
+        wrapped = PeftModel.from_pretrained(pipe.unet, lora_id)
+    except Exception as exc:
+        raise RuntimeError(f"Hard fail: PeftModel.from_pretrained({lora_id!r}) failed: {exc}") from exc
+    wrapped = wrapped.to(device=device, dtype=dtype)
+    wrapped.eval()
+    pipe.unet = wrapped
+    info = inspect_peft_unet(pipe.unet)
+    info["lora_id"] = lora_id
+    info["strength_sweep_supported"] = peft_runtime_scale_supported(pipe.unet)
+    if not info["strength_sweep_supported"]:
+        print(
+            "PEFT runtime adapter scaling is not supported cleanly for this UNet wrap. "
+            "Strength sweep 0.8 vs 1.0 is temporarily unsupported; generating at native/default adapter strength only."
+        )
+    return info
+
+
 def load_lora_or_fail(pipe, lora_id: str, adapter_name: str = "candidate"):
     if not lora_id:
         raise RuntimeError("Hard fail: LoRA id is empty.")
+    print("LoRA loader: Diffusers load_lora_weights")
     if not hasattr(pipe, "load_lora_weights"):
         raise RuntimeError("Hard fail: this pipeline cannot load LoRA weights.")
     print(f"requested LoRA: {lora_id}")

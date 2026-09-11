@@ -6,6 +6,7 @@ Not Pixelator's production South-base engine. Manual inspection required.
 MODEL_ID = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 LORA = "VaroDZAKY/Varo_pixel_Art"
 LORA_ADAPTER_NAME = "varo"
+LORA_LOADER = "peft_unet"
 LORA_STRENGTHS = (0.8, 1.0)
 OUTPUT_NAME = "varodzak_pixel_art"
 REQUIRE_CUDA = True

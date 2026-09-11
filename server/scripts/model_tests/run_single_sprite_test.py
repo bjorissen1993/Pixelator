@@ -25,6 +25,7 @@ from helpers import (
     assert_exact_model,
     cuda_memory,
     load_lora_or_fail,
+    load_peft_unet_adapter,
     load_text2image_pipeline,
     output_dir_for,
     require_cuda,
@@ -90,6 +91,7 @@ def main() -> int:
 
     model_id = (args.model or cfg_get(preset, "MODEL_ID") or test_config.MODEL_ID or "").strip()
     lora_id = (args.lora or cfg_get(preset, "LORA") or "").strip()
+    lora_loader = (cfg_get(preset, "LORA_LOADER") or "diffusers").strip().lower()
     adapter_name = cfg_get(preset, "LORA_ADAPTER_NAME", "candidate")
     lora_strengths = tuple(cfg_get(preset, "LORA_STRENGTHS") or ())
     seeds = parse_seeds(args.seeds, cfg_get(preset, "SEEDS") or test_config.SEEDS)
@@ -117,6 +119,11 @@ def main() -> int:
         print("Hard fail: set MODEL_ID, pass --model, or use --config", file=sys.stderr)
         return 1
     print(f"adapters: LoRA={'on ' + lora_id if lora_id else 'off'} IP-Adapter=off ControlNet=off")
+    if lora_id:
+        if lora_loader == "peft_unet":
+            print("LoRA loader: PEFT UNet adapter (PeftModel.from_pretrained)")
+        else:
+            print("LoRA loader: Diffusers load_lora_weights")
     warn_if_rejected(model_id)
 
     try:
@@ -150,6 +157,7 @@ def main() -> int:
             "model_id": model_id,
             "loaded_model_id": "",
             "lora": lora_id or None,
+            "lora_loader": lora_loader if lora_id else None,
             "lora_strengths": list(lora_strengths) if lora_strengths else None,
             "pipeline_class": "",
             "device": device,
@@ -173,11 +181,22 @@ def main() -> int:
 
         print("Loading pipeline…")
         load_started = time.perf_counter()
+        peft_info = None
         pipe = load_text2image_pipeline(model_id, dtype, allow_sdxl=bool(allow_sdxl))
         loaded_id = assert_exact_model(pipe, model_id, allow_sdxl=bool(allow_sdxl))
         pipe = pipe.to(device)
-        if lora_id:
+        if lora_id and lora_loader == "peft_unet":
+            if not cuda_ok:
+                raise RuntimeError("Hard fail: CUDA is unavailable.")
+            peft_info = load_peft_unet_adapter(pipe, lora_id, device=device, dtype=dtype)
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hard fail: CUDA became unavailable after PEFT UNet wrap.")
+            metadata["peft"] = peft_info
+            metadata["strength_sweep_supported"] = bool(peft_info.get("strength_sweep_supported"))
+        elif lora_id:
+            print("LoRA loader: Diffusers load_lora_weights")
             load_lora_or_fail(pipe, lora_id, adapter_name=adapter_name)
+            metadata["strength_sweep_supported"] = True
         elif cfg_get(preset, "LORA"):
             raise RuntimeError("Hard fail: config requires a LoRA but none was loaded.")
         if hasattr(pipe, "set_progress_bar_config"):
@@ -190,7 +209,13 @@ def main() -> int:
         print()
 
         jobs = []
-        if lora_id and lora_strengths:
+        peft_native_only = bool(lora_id) and lora_loader == "peft_unet" and not (peft_info or {}).get("strength_sweep_supported")
+        if peft_native_only:
+            print("Generating 4 native-strength images. Requested 0.8/1.0 sweep is not applied.")
+            single_prompt = prompt or next(iter(prompts.values()))
+            for seed in seeds:
+                jobs.append(("strength_native", single_prompt, seed, None))
+        elif lora_id and lora_strengths:
             single_prompt = prompt or next(iter(prompts.values()))
             for strength in lora_strengths:
                 for seed in seeds:
@@ -200,17 +225,19 @@ def main() -> int:
                 for seed in seeds:
                     jobs.append((f"variant{variant}", text, seed, None))
         if len(jobs) < 8:
-            print(f"WARNING: this run will write {len(jobs)} images, expected 8.")
+            print(f"NOTE: this run will write {len(jobs)} images (8 expected when a strength sweep is supported).")
 
         for label, text, seed, strength in jobs:
-            filename = f"{label}_seed{seed}.png" if strength is not None else f"{label}_{seed}.png"
+            filename = f"{label}_seed{seed}.png" if (strength is not None or label.startswith("strength")) else f"{label}_{seed}.png"
             path = out_dir / filename
             extra = {}
             print(f"--- {filename} ---")
             print(f"generation seed: {seed}")
-            if strength is not None:
+            if strength is not None and lora_loader != "peft_unet":
                 print(f"LoRA strength: {strength}")
                 extra = apply_lora_strength(pipe, adapter_name, strength)
+            elif peft_native_only:
+                print("LoRA strength: native/default (PEFT strength sweep unsupported)")
             generator = torch.Generator(device=device).manual_seed(seed)
             if cuda_ok:
                 torch.cuda.reset_peak_memory_stats()
@@ -232,7 +259,8 @@ def main() -> int:
                 {
                     "base_model": loaded_id,
                     "lora": lora_id or None,
-                    "lora_strength": strength,
+                    "lora_loader": lora_loader if lora_id else None,
+                    "lora_strength": "native/default" if peft_native_only else strength,
                     "prompt": text,
                     "negative_prompt": negative,
                     "seed": seed,
