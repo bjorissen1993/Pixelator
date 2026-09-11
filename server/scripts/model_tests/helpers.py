@@ -72,6 +72,45 @@ def write_metadata(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+CLIP_TOKEN_LIMIT = 75
+
+
+def clip_token_count(tokenizer, text: str) -> int:
+    encoded = tokenizer(text, truncation=False, add_special_tokens=True)
+    ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded.input_ids
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return len(ids)
+
+
+def assert_clip_prompt_budget(pipe, positive: str, negative: str, *, limit: int = CLIP_TOKEN_LIMIT) -> dict:
+    tokenizer = getattr(pipe, "tokenizer", None)
+    if tokenizer is None:
+        raise RuntimeError("Hard fail: pipeline has no tokenizer; cannot count CLIP tokens.")
+    max_len = getattr(tokenizer, "model_max_length", 77)
+    positive_count = clip_token_count(tokenizer, positive)
+    negative_count = clip_token_count(tokenizer, negative)
+    print(f"CLIP tokenizer max length: {max_len}")
+    print(f"positive prompt CLIP tokens: {positive_count}")
+    print(f"negative prompt CLIP tokens: {negative_count}")
+    if positive_count > limit:
+        raise RuntimeError(
+            f"Hard fail: positive prompt is {positive_count} CLIP tokens (limit {limit}). "
+            "Berwynn traits would be truncated. Shorten the prompt."
+        )
+    if negative_count > limit:
+        print(
+            f"WARNING: negative prompt is {negative_count} CLIP tokens (limit {limit}). "
+            "It may be truncated by CLIP."
+        )
+    return {
+        "clip_max_length": max_len,
+        "positive_tokens": positive_count,
+        "negative_tokens": negative_count,
+        "token_limit": limit,
+    }
+
+
 def load_text2image_pipeline(model_id: str, dtype, allow_sdxl: bool):
     from diffusers import DiffusionPipeline, StableDiffusionPipeline
 

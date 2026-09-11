@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_config
 from helpers import (
     apply_lora_strength,
+    assert_clip_prompt_budget,
     assert_exact_model,
     cuda_memory,
     load_lora_or_fail,
@@ -204,6 +205,11 @@ def main() -> int:
         metadata["loaded_model_id"] = loaded_id
         metadata["pipeline_class"] = type(pipe).__name__
         metadata["load_seconds"] = round(time.perf_counter() - load_started, 2)
+        unique_prompts = [prompt] if prompt else list(prompts.values())
+        token_budget = assert_clip_prompt_budget(pipe, unique_prompts[0], negative)
+        for extra_prompt in unique_prompts[1:]:
+            assert_clip_prompt_budget(pipe, extra_prompt, negative)
+        metadata["clip_tokens"] = token_budget
         write_metadata(metadata_path, metadata)
         print(f"Pipeline loaded in {metadata['load_seconds']:.1f}s")
         print()
