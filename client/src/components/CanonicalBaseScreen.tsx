@@ -1,11 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AssetLabSession, AssetType, CatalogSummary, ExtractionQuality, GenerationCandidate, LearningSnapshot } from "@shared";
+import type { AssetLabSession, AssetType, CatalogSummary, ExtractionQuality, GenerationCandidate, LearningSnapshot, QualityRating, QualityReview } from "@shared";
 import { api } from "../api";
 import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button } from "./ui";
 
 const DEFAULT_BATCH_SIZES = [4, 8, 12, 20] as const;
+
+const QUALITY_FIELDS: { key: keyof QualityReview; label: string }[] = [
+  { key: "technicalQuality", label: "Technical quality" },
+  { key: "silhouette", label: "Silhouette" },
+  { key: "proportions", label: "Proportions" },
+  { key: "pixelReadability", label: "Pixel readability" },
+  { key: "transparencyExtraction", label: "Transparency extraction" },
+];
+
+const emptyQualityReview = (): QualityReview => ({
+  technicalQuality: null,
+  silhouette: null,
+  proportions: null,
+  pixelReadability: null,
+  transparencyExtraction: null,
+});
+
+function qualityReviewComplete(review?: QualityReview | null) {
+  return QUALITY_FIELDS.every((field) => review?.[field.key] === "good" || review?.[field.key] === "bad");
+}
+
+function learningClassLabel(value?: string) {
+  if (value === "global_quality") return "Global quality";
+  if (value === "character_type_quality") return "Character-type quality";
+  if (value === "project") return "Project-specific";
+  if (value?.endsWith("_type_quality")) return `${value.replace("_type_quality", "")}-type quality`;
+  return "Asset-specific";
+}
 
 function extractionBadge(quality?: ExtractionQuality | null) {
   if (quality === "good") return { label: "Good", cls: "status-good" };
@@ -17,9 +45,11 @@ function extractionBadge(quality?: ExtractionQuality | null) {
 function CandidateOutputPreviews({
   candidate,
   name,
+  qualityFirst = false,
 }: {
   candidate: GenerationCandidate;
   name: string;
+  qualityFirst?: boolean;
 }) {
   const preview = candidate.previewPath || candidate.path;
   const isolated = candidate.isolatedPath;
@@ -28,7 +58,7 @@ function CandidateOutputPreviews({
     <>
       <div className={`canonical-previews ${wantsTransparent ? "has-isolated" : ""}`}>
         <figure className="canonical-preview-frame">
-          <figcaption>Review preview</figcaption>
+          <figcaption>{qualityFirst ? "Quality review image" : "Review preview"}</figcaption>
           <div className="canonical-stage">
             <img
               alt={`${name} review preview ${candidate.seed}`}
@@ -94,6 +124,7 @@ export function AssetLabScreen() {
   const [rejectReasonIds, setRejectReasonIds] = useState<string[]>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [validatorFeedback, setValidatorFeedback] = useState<"" | "missed_issue" | "incorrect_detection">("");
+  const [qualityReviews, setQualityReviews] = useState<Record<string, QualityReview>>({});
 
   const assetsForType = useMemo(
     () => (catalog?.assets ?? []).filter((item) => item.projectId === projectId && item.assetType === assetType),
@@ -168,6 +199,14 @@ export function AssetLabScreen() {
   };
 
   const reviewReasons = sessionMatches ? session?.reviewReasons ?? [] : [];
+  const qualityFirst = sessionMatches && session?.reviewMode === "quality_first";
+
+  const setQualityRating = (candidateId: string, field: keyof QualityReview, value: QualityRating) => {
+    setQualityReviews((current) => ({
+      ...current,
+      [candidateId]: { ...(current[candidateId] ?? emptyQualityReview()), [field]: value },
+    }));
+  };
 
   const openReject = (candidateId: string) => {
     setRejectingId(candidateId);
@@ -183,7 +222,11 @@ export function AssetLabScreen() {
   };
 
   const confirmReject = (candidateId: string) => {
-    if (!rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback) {
+    const review = qualityReviews[candidateId];
+    if (qualityFirst && !qualityReviewComplete(review)) {
+      return;
+    }
+    if (!qualityFirst && !rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback) {
       return;
     }
     void run("Rejecting candidate", async () => {
@@ -192,6 +235,7 @@ export function AssetLabScreen() {
           reasonIds: rejectReasonIds,
           note: rejectNote.trim(),
           validatorFeedback: validatorFeedback || null,
+          qualityReview: qualityFirst ? review : null,
         }),
       );
       setRejectingId(null);
@@ -319,7 +363,10 @@ export function AssetLabScreen() {
           <h2>Learning</h2>
         </div>
         <p className="hint">
-          Recipe optimization only. The model is not being retrained. Asset-specific conclusions stay on this asset.
+          Recipe optimization only. The model is not being retrained.
+          {qualityFirst
+            ? " Quality-first ratings tune global and character-type recipes. Content notes stay on this benchmark asset."
+            : " Asset-specific conclusions stay on this asset."}
         </p>
         <div className="learning-stats">
           <div className="learning-stat">
@@ -383,7 +430,9 @@ export function AssetLabScreen() {
                 </span>
               </header>
               <p className="hint">{item.explanation}</p>
-              <p className="sprite-meta">Source {item.source}</p>
+              <p className="sprite-meta">
+                {learningClassLabel(item.learningClass)} · Source {item.source}
+              </p>
               <div className="chip-row">
                 <Button
                   disabled={!!busy || item.disabled}
@@ -504,7 +553,7 @@ export function AssetLabScreen() {
         </div>
         {sessionMatches && session?.accepted ? (
           <div className="canonical-accepted">
-            <CandidateOutputPreviews candidate={session.accepted} name={session.assetName} />
+            <CandidateOutputPreviews candidate={session.accepted} name={session.assetName} qualityFirst={!!qualityFirst} />
             <div>
               <p>Accepted seed {session.accepted.seed}. This is the only allowed later identity/reference source for this asset.</p>
               <p className="hint">
@@ -537,7 +586,37 @@ export function AssetLabScreen() {
                   {candidate.recipeMode ? ` · ${candidate.recipeMode}` : ""}
                 </span>
               </header>
-              <CandidateOutputPreviews candidate={candidate} name={session?.assetName ?? "Asset"} />
+              <CandidateOutputPreviews candidate={candidate} name={session?.assetName ?? "Asset"} qualityFirst={!!qualityFirst} />
+              {qualityFirst ? (
+                <div className="quality-review-grid">
+                  {QUALITY_FIELDS.map((field) => {
+                    const value = qualityReviews[candidate.id]?.[field.key] ?? candidate.qualityReview?.[field.key];
+                    return (
+                      <fieldset className="quality-review-field" key={field.key}>
+                        <legend>{field.label}</legend>
+                        <label>
+                          <input
+                            type="radio"
+                            name={`${candidate.id}-${field.key}`}
+                            checked={value === "good"}
+                            onChange={() => setQualityRating(candidate.id, field.key, "good")}
+                          />
+                          <span>Good</span>
+                        </label>
+                        <label>
+                          <input
+                            type="radio"
+                            name={`${candidate.id}-${field.key}`}
+                            checked={value === "bad"}
+                            onChange={() => setQualityRating(candidate.id, field.key, "bad")}
+                          />
+                          <span>Bad</span>
+                        </label>
+                      </fieldset>
+                    );
+                  })}
+                </div>
+              ) : null}
               {candidate.rejectReasons.length ? (
                 <ul className="quality-warnings invalid-base">
                   {candidate.rejectReasons.map((reason) => (
@@ -622,7 +701,12 @@ export function AssetLabScreen() {
                   <div className="chip-row">
                     <Button
                       variant="danger"
-                      disabled={!!busy || (!rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback)}
+                      disabled={
+                        !!busy ||
+                        (qualityFirst
+                          ? !qualityReviewComplete(qualityReviews[candidate.id])
+                          : !rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback)
+                      }
                       onClick={() => confirmReject(candidate.id)}
                     >
                       Confirm reject
@@ -635,10 +719,23 @@ export function AssetLabScreen() {
               ) : (
                 <div className="chip-row">
                   <Button
-                    disabled={!!busy || !candidate.valid || candidate.status === "accepted"}
+                    disabled={
+                      !!busy ||
+                      !candidate.valid ||
+                      candidate.status === "accepted" ||
+                      (!!qualityFirst && !qualityReviewComplete(qualityReviews[candidate.id]))
+                    }
                     onClick={() =>
                       run("Accepting canonical reference", async () => {
-                        setSession(await api.acceptAssetLab(candidate.id, projectId, assetType, assetId));
+                        setSession(
+                          await api.acceptAssetLab(
+                            candidate.id,
+                            projectId,
+                            assetType,
+                            assetId,
+                            qualityFirst ? qualityReviews[candidate.id] : null,
+                          ),
+                        );
                       })
                     }
                   >

@@ -1,0 +1,11 @@
+{
+  "projectId": "pixelator-bench",
+  "name": "Pixelator Bench default",
+  "outline": "crisp",
+  "shading": "limited",
+  "detail": "readable",
+  "notes": [
+    "Generic pixel-art quality benchmark. These style notes must not become Chimera or Berwynn rules."
+  ],
+  "validatorRules": []
+}

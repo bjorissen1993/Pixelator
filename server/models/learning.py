@@ -72,6 +72,7 @@ class RecipeAdjustment(BaseModel):
     disabled: bool = False
     pinned: bool = False
     explanation: str = ""
+    learningClass: str = "asset_specific"
 
 
 class GenerationRecipe(BaseModel):

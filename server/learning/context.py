@@ -28,7 +28,7 @@ class LearningContext:
         if scope == "project":
             return f"project:{self.projectId}"
         if scope == "asset_type":
-            return f"asset_type:{self.projectId}/{self.assetType}"
+            return f"asset_type:{self.assetType}"
         if scope == "asset":
             return f"asset:{self.projectId}/{self.assetType}/{self.assetId}"
         variant = self.state or self.direction or "default"
@@ -44,6 +44,8 @@ def record_matches(record: LearningRecord, context: LearningContext, scope: Lear
         return False
     if scope == "global":
         return True
+    if scope == "asset_type" and getattr(record, "reviewMode", "standard") == "quality_first":
+        return record.assetType == context.assetType
     if record.projectId != context.projectId:
         return False
     if scope == "project":

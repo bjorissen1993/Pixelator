@@ -507,6 +507,22 @@ button.compass-cell { width: 100%; font: inherit; }
     #8f988c;
 }
 .canonical-preview { width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; }
+.quality-review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.quality-review-field {
+  margin: 0;
+  border: 1px solid #273128;
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+.quality-review-field legend { color: #7d8a72; font-size: 11px; padding: 0; }
+.quality-review-field label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.quality-review-field input { width: auto; }
 .isolation-badge { justify-self: start; text-transform: none; letter-spacing: 0.02em; }
 .status-badge.status-ok, .status-badge.status-good { background: #24351f; color: #c8ea83; }
 .status-badge.status-warning { background: #2a3218; color: #d6c27a; }

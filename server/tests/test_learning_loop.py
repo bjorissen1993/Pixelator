@@ -45,6 +45,7 @@ def record(
     manual: list[str] | None = None,
     validator_feedback: str | None = None,
     feedback_channel: str = "generation",
+    review_mode: str = "standard",
 ) -> LearningRecord:
     automatic_reasons = automatic if automatic is not None else ([] if manual else reasons or [])
     manual_reasons = manual or []
@@ -68,6 +69,7 @@ def record(
         seed=seed,
         validationResults={"ok": valid, "validForBase": valid},
         feedbackChannel=feedback_channel,  # type: ignore[arg-type]
+        reviewMode=review_mode,  # type: ignore[arg-type]
     )
 
 

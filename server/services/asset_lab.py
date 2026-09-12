@@ -18,6 +18,7 @@ from uuid import uuid4
 import config
 from domain.catalog import all_assets, all_projects, default_selection, get_asset, get_project, get_style
 from models.catalog import (
+    AssetLabAcceptRequest,
     AssetLabExtractFlagRequest,
     AssetLabRejectRequest,
     AssetLabSession,
@@ -27,6 +28,7 @@ from models.catalog import (
     ExtractionMetadata,
     GenerationCandidate,
     LearningRecord,
+    QualityReview,
     ValidatorFeedback,
 )
 from models.canonical_base import CanonicalBaseCandidate, CanonicalBaseSession
@@ -45,6 +47,7 @@ from persistence.projects import (
     session_path,
 )
 from learning.policy import ALLOWED_BATCH_SIZES, parse_batch_size
+from learning.quality_first import is_quality_first, promoted_quality_records, require_quality_review
 from learning.recipes import plan_candidate_recipes
 from learning.store import load_controls
 from processing.isolation import EXTRACTION_VERSION, describe_isolation, extract_transparent_asset
@@ -137,6 +140,9 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         notes.append("Direction generation stays locked until that later character pass exists.")
     if not asset.generation.enabled:
         notes.append("Generation is not enabled for this asset yet.")
+    if is_quality_first(asset):
+        notes.append("Quality-first benchmark: rate technical quality, silhouette, proportions, pixel readability, and transparency separately.")
+        notes.append("Quality ratings can tune global and character-type recipes. They do not create identity assumptions for other assets.")
     return AssetLabSession(
         projectId=asset.projectId,
         projectName=project.name,
@@ -157,6 +163,7 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         usingCurrentDirectionSet=False,
         notes=notes,
         backgroundMode=background_mode_for(asset),
+        reviewMode=asset.reviewMode,
     )
 
 
@@ -349,6 +356,7 @@ def load_session(
     session.reviewChecklist = list(asset.reviewChecklist)
     session.reviewReasons = reasons_for_asset(asset)
     session.backgroundMode = background_mode_for(asset)
+    session.reviewMode = asset.reviewMode
     session.modelId = asset.generation.modelId or session.modelId
     session.prompt = asset.generation.prompt or session.prompt
     session.negativePrompt = asset.generation.negativePrompt or session.negativePrompt
@@ -499,6 +507,7 @@ def _record_decision(
     manual_reasons: list[str] | None = None,
     manual_note: str = "",
     validator_feedback: ValidatorFeedback | None = None,
+    quality_review: QualityReview | None = None,
 ) -> None:
     automatic = list(candidate.rejectReasons)
     manual = list(manual_reasons or extra_reasons or [])
@@ -539,8 +548,19 @@ def _record_decision(
             referenceStrength=(candidate.modelSettings or {}).get("referenceStrength"),
             learnedAdjustments=candidate.learnedAdjustments,
             feedbackChannel="generation",
+            reviewMode=asset.reviewMode,
+            qualityReview=quality_review.model_dump() if quality_review else {},
         )
     )
+    if is_quality_first(asset) and quality_review is not None:
+        for item in promoted_quality_records(
+            asset,
+            candidate,
+            quality_review,
+            created_at=_now(),
+            record_id_prefix=f"{candidate.id}-{decision}-quality",
+        ):
+            write_learning_record(item)
 
 
 def accept_candidate(
@@ -548,6 +568,7 @@ def accept_candidate(
     project_id: str | None = None,
     asset_type: AssetType | None = None,
     asset_id: str | None = None,
+    payload: AssetLabAcceptRequest | None = None,
 ) -> AssetLabSession:
     from PIL import Image
 
@@ -559,6 +580,7 @@ def accept_candidate(
         raise KeyError(f"Unknown candidate {candidate_id}")
     if chosen.rejectReasons or not chosen.valid:
         raise ValueError("Hard fail: this candidate failed validation.")
+    review = require_quality_review(payload.qualityReview if payload else None) if is_quality_first(asset) else None
     source = _resolve_raw_path(asset, chosen)
     if not source.is_file():
         raise FileNotFoundError(f"Candidate image missing: {source}")
@@ -575,6 +597,7 @@ def accept_candidate(
             Image.open(isolated_source).save(accepted_isolated_path(project_id, asset_type, asset_id))
             chosen.isolatedPath = _public_path(accepted_isolated_path(project_id, asset_type, asset_id))
     chosen.status = "accepted"
+    chosen.qualityReview = review
     chosen.path = _public_path(source)
     chosen.rawPath = _public_path(source)
     chosen.previewPath = _public_path(accepted_preview_path(project_id, asset_type, asset_id))
@@ -583,7 +606,7 @@ def accept_candidate(
             item.status = "rejected"
     session.accepted = chosen
     _apply_followup_locks(session, asset, True)
-    _record_decision(asset, chosen, "accepted")
+    _record_decision(asset, chosen, "accepted", quality_review=review)
     session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)
     return session
@@ -619,18 +642,21 @@ def reject_candidate(
             if extra.exists():
                 extra.unlink()
     body = payload or AssetLabRejectRequest()
+    review = require_quality_review(body.qualityReview) if is_quality_first(asset) else body.qualityReview
     manual = resolve_manual_reasons(asset, body.reasonIds, body.note)
     if (
         payload is not None
         and not manual
         and not body.note.strip()
         and not body.validatorFeedback
+        and not is_quality_first(asset)
     ):
         raise ValueError("Choose at least one rejection reason, a short note, or a validator-feedback marker.")
     chosen.status = "rejected"
     chosen.manualRejectReasons = manual
     chosen.manualNote = body.note.strip()
     chosen.validatorFeedback = body.validatorFeedback
+    chosen.qualityReview = review
     _apply_followup_locks(session, asset, False)
     _record_decision(
         asset,
@@ -639,6 +665,7 @@ def reject_candidate(
         manual_reasons=manual,
         manual_note=body.note.strip(),
         validator_feedback=body.validatorFeedback,
+        quality_review=review,
     )
     session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)

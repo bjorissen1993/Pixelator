@@ -50,9 +50,20 @@ STOPWORDS = {
     "manual",
     "architecture",
     "audit",
+    "poor",
 }
 
 TOKEN_RE = re.compile(r"[a-z][a-z\-']{2,}")
+
+
+def learning_class_for(scope: LearningScope, asset_type: str) -> str:
+    if scope == "global":
+        return "global_quality"
+    if scope == "asset_type":
+        return f"{asset_type}_type_quality"
+    if scope == "project":
+        return "project"
+    return "asset_specific"
 
 
 def tokens_from_reason(reason: str) -> list[str]:
@@ -160,6 +171,7 @@ def _fragment_signals(
                     f"Added negative fragment '{token}' because {origin} "
                     f"{source} rejections mentioned it. Manual review is weighted higher than automatic checks."
                 ),
+                learningClass=learning_class_for(scope, context.assetType),
             )
         )
         if band == "record":
@@ -217,6 +229,7 @@ def _numeric_signals(
                 f"{pretty.capitalize()} moved toward {median:g} because {evidence} accepted "
                 f"{source} candidates performed better around that setting."
             ),
+            learningClass=learning_class_for(scope, context.assetType),
         )
     ]
 

@@ -73,9 +73,10 @@ def _merge() -> tuple[list[ProjectProfile], list[StyleProfile], list[AssetProfil
     styles.update(_index_styles(profile_styles))
     styles.update(_index_styles(builtin_styles()))
 
-    # Assets: builtin → versioned JSON → runtime asset.json, so dropped files can add assets.
+    # Assets: runtime data can add new assets. Versioned profiles and builtins win for known ids
+    # so a stale data/asset.json cannot drop catalog fields such as reviewMode.
     assets: dict[tuple[str, str, str], AssetProfile] = {}
-    for group in (builtin_assets(), profile_assets, data_assets):
+    for group in (data_assets, profile_assets, builtin_assets()):
         for item in group:
             key = _asset_key(item)
             current = assets.get(key)

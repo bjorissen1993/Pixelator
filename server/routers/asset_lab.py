@@ -2,7 +2,13 @@ from fastapi import APIRouter
 
 from domain.catalog import get_asset
 from learning.policy import parse_batch_size
-from models.catalog import AssetLabExtractFlagRequest, AssetLabGenerateRequest, AssetLabRejectRequest, AssetType
+from models.catalog import (
+    AssetLabAcceptRequest,
+    AssetLabExtractFlagRequest,
+    AssetLabGenerateRequest,
+    AssetLabRejectRequest,
+    AssetType,
+)
 from models.learning import LearningControlRequest
 from services import asset_lab as asset_lab_service
 from services import learning as learning_service
@@ -59,10 +65,13 @@ def accept(
     projectId: str | None = None,
     assetType: AssetType | None = None,
     assetId: str | None = None,
+    payload: AssetLabAcceptRequest | None = None,
 ):
     try:
         project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
-        return asset_lab_service.accept_candidate(candidate_id, project_id, asset_type, asset_id)
+        return asset_lab_service.accept_candidate(
+            candidate_id, project_id, asset_type, asset_id, payload or AssetLabAcceptRequest()
+        )
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_accept", "candidateId": candidate_id})
 

@@ -466,6 +466,16 @@ export type BackgroundMode = "transparent" | "solid" | "scene";
 export type IsolatedStatus = "ok" | "failed" | "skipped";
 export type ExtractionQuality = "good" | "warning" | "failed";
 export type FeedbackChannel = "generation" | "extraction";
+export type ReviewMode = "standard" | "quality_first";
+export type QualityRating = "good" | "bad";
+
+export interface QualityReview {
+  technicalQuality?: QualityRating | null;
+  silhouette?: QualityRating | null;
+  proportions?: QualityRating | null;
+  pixelReadability?: QualityRating | null;
+  transparencyExtraction?: QualityRating | null;
+}
 
 export interface ExtractionMetadata {
   method?: string;
@@ -523,6 +533,7 @@ export interface RecipeAdjustment {
   disabled: boolean;
   pinned: boolean;
   explanation: string;
+  learningClass?: string;
 }
 
 export interface GenerationRecipe {
@@ -611,6 +622,7 @@ export interface GenerationCandidate {
   recipeFingerprint?: string;
   recipeMode?: string;
   recipeWhy?: string[];
+  qualityReview?: QualityReview | null;
 }
 
 export interface AssetLabSession {
@@ -639,6 +651,7 @@ export interface AssetLabSession {
   learning?: LearningSnapshot | null;
   batchSize?: number;
   backgroundMode?: BackgroundMode | null;
+  reviewMode?: ReviewMode;
 }
 
 export type CanonicalBaseCandidate = GenerationCandidate;

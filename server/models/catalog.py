@@ -27,6 +27,9 @@ BackgroundMode = Literal["transparent", "solid", "scene"]
 IsolatedStatus = Literal["ok", "failed", "skipped"]
 ExtractionQuality = Literal["good", "warning", "failed"]
 FeedbackChannel = Literal["generation", "extraction"]
+ReviewMode = Literal["standard", "quality_first"]
+QualityRating = Literal["good", "bad"]
+LearningClass = Literal["global_quality", "character_type_quality", "project", "asset_specific"]
 
 ValidatorLayer = Literal["global", "asset_type", "project", "asset"]
 ReviewReasonLayer = Literal["global", "asset_type", "asset"]
@@ -46,6 +49,14 @@ class ReviewReason(BaseModel):
     label: str
     layer: ReviewReasonLayer = "global"
     assetTypes: list[AssetType] = Field(default_factory=list)
+
+
+class QualityReview(BaseModel):
+    technicalQuality: QualityRating | None = None
+    silhouette: QualityRating | None = None
+    proportions: QualityRating | None = None
+    pixelReadability: QualityRating | None = None
+    transparencyExtraction: QualityRating | None = None
 
 
 class ExtractionMetadata(BaseModel):
@@ -110,6 +121,7 @@ class AssetProfile(BaseModel):
     state: str | None = None
     direction: str | None = None
     reviewChecklist: list[str] = Field(default_factory=list)
+    reviewMode: ReviewMode = "standard"
     flags: AssetFlags = Field(default_factory=AssetFlags)
     generation: GenerationSpec = Field(default_factory=GenerationSpec)
     validatorRules: list[ValidatorRule] = Field(default_factory=list)
@@ -148,6 +160,8 @@ class LearningRecord(BaseModel):
     referenceStrength: float | None = None
     learnedAdjustments: list[dict[str, Any]] = Field(default_factory=list)
     feedbackChannel: FeedbackChannel = "generation"
+    reviewMode: ReviewMode = "standard"
+    qualityReview: dict[str, Any] = Field(default_factory=dict)
 
 
 class GenerationCandidate(BaseModel):
@@ -183,6 +197,7 @@ class GenerationCandidate(BaseModel):
     recipeMode: str = ""
     learnedAdjustments: list[dict[str, Any]] = Field(default_factory=list)
     recipeWhy: list[str] = Field(default_factory=list)
+    qualityReview: QualityReview | None = None
 
 
 class AssetLabSession(BaseModel):
@@ -211,6 +226,7 @@ class AssetLabSession(BaseModel):
     learning: dict[str, Any] | None = None
     batchSize: int = 4
     backgroundMode: BackgroundMode | None = None
+    reviewMode: ReviewMode = "standard"
 
 
 class AssetLabGenerateRequest(BaseModel):
@@ -226,10 +242,15 @@ class AssetLabGenerateRequest(BaseModel):
         return parse_batch_size(self.batchSize if self.batchSize is not None else self.count)
 
 
+class AssetLabAcceptRequest(BaseModel):
+    qualityReview: QualityReview | None = None
+
+
 class AssetLabRejectRequest(BaseModel):
     reasonIds: list[str] = Field(default_factory=list)
     note: str = ""
     validatorFeedback: ValidatorFeedback | None = None
+    qualityReview: QualityReview | None = None
 
 
 class AssetLabExtractFlagRequest(BaseModel):

@@ -1,0 +1,9 @@
+{
+  "id": "pixelator-bench",
+  "name": "Pixelator Bench",
+  "description": "Generic quality-first benchmark. Not Chimera-specific.",
+  "styleProfileId": "pixelator-bench-default",
+  "defaultAssetType": "character",
+  "defaultAssetId": "bearded-man",
+  "isDefault": false
+}

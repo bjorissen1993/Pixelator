@@ -1,4 +1,4 @@
-import type { AssetLabSession, AssetType, CanonicalBaseSession, CatalogSummary, CharacterProfile, Direction, GenerationProgress, GenerationResult, LearningSnapshot, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
+import type { AssetLabSession, AssetType, CanonicalBaseSession, CatalogSummary, CharacterProfile, Direction, GenerationProgress, GenerationResult, LearningSnapshot, MemoryEntry, MemorySuggestions, ProviderInfo, QualityReview, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
 
 export class ApiRequestError extends Error {
   details: string;
@@ -203,10 +203,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ projectId, assetType, assetId, batchSize }),
     }),
-  acceptAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
+  acceptAssetLab: (
+    candidateId: string,
+    projectId: string,
+    assetType: AssetType,
+    assetId: string,
+    qualityReview?: QualityReview | null,
+  ) =>
     request<AssetLabSession>(
       `/api/tests/asset-lab/accept/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
-      { method: "POST", body: "{}" },
+      { method: "POST", body: JSON.stringify({ qualityReview: qualityReview ?? null }) },
     ),
   reextractAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
     request<AssetLabSession>(
@@ -233,6 +239,7 @@ export const api = {
       reasonIds: string[];
       note?: string;
       validatorFeedback?: "missed_issue" | "incorrect_detection" | null;
+      qualityReview?: QualityReview | null;
     },
   ) =>
     request<AssetLabSession>(

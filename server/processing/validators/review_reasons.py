@@ -50,12 +50,25 @@ TYPE_REVIEW_REASONS = [
 ]
 
 
+QUALITY_FIRST_REASON_IDS = {
+    "wrong_silhouette",
+    "cropped_not_full_body",
+    "multiple_subjects",
+    "busy_background",
+    "style_mismatch",
+    "other",
+}
+
+
 def reasons_for_asset(asset: AssetProfile) -> list[ReviewReason]:
     """Asset-specific first, then type, then generic. IDs stay unique."""
     seen: set[str] = set()
     result: list[ReviewReason] = []
+    quality_first = getattr(asset, "reviewMode", "standard") == "quality_first"
     for item in [*asset.reviewReasons, *TYPE_REVIEW_REASONS, *GLOBAL_REVIEW_REASONS]:
         if item.assetTypes and asset.assetType not in item.assetTypes:
+            continue
+        if quality_first and item.id not in QUALITY_FIRST_REASON_IDS and item.layer != "asset":
             continue
         if item.id in seen:
             continue

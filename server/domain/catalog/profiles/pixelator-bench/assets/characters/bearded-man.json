@@ -1,0 +1,36 @@
+{
+  "projectId": "pixelator-bench",
+  "assetType": "character",
+  "assetId": "bearded-man",
+  "name": "Bearded Man",
+  "canonicalKind": "character_quality_benchmark",
+  "canonicalLabel": "Generic full-body character quality benchmark",
+  "state": "idle",
+  "direction": "S",
+  "reviewMode": "quality_first",
+  "reviewChecklist": [
+    "Technical quality: crisp pixels, limited palette, no blur",
+    "Silhouette: one full-body figure, front-facing, readable",
+    "Proportions: believable standing character, no extra limbs",
+    "Pixel readability: subject stays clear at small size",
+    "Transparency extraction: isolated subject, no cut-off hands or hair"
+  ],
+  "flags": {
+    "oneSubject": true,
+    "fullBody": true,
+    "plainBackground": true
+  },
+  "generation": {
+    "enabled": true,
+    "modelId": "PublicPrompts/All-In-One-Pixel-Model",
+    "width": 512,
+    "height": 512,
+    "steps": 30,
+    "guidance": 7.5,
+    "prompt": "pixelsprite, one full-body bearded man, front facing, centered, standing pose, clean readable silhouette, simple clothing, pixel art character, limited palette, crisp pixel edges, plain background",
+    "negativePrompt": "multiple characters, cropped body, busy background, armor, weapon, text, watermark, blurry, extra limbs, deformed hands, side pose, profile view",
+    "backgroundMode": "transparent"
+  },
+  "validatorRules": [],
+  "reviewReasons": []
+}
