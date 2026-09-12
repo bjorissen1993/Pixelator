@@ -448,12 +448,56 @@ export interface MemorySuggestions {
 }
 
 export interface WorkspaceSection {
-  id: "studio" | "identity" | "library" | "export" | "canonicalBase";
+  id: "studio" | "identity" | "library" | "export" | "canonicalBase" | "assetLab";
   label: string;
 }
 
-export interface CanonicalBaseCandidate {
+export type AssetType =
+  | "character"
+  | "portrait"
+  | "item"
+  | "prop"
+  | "tile"
+  | "background"
+  | "ui"
+  | "vfx";
+
+export interface ProjectProfile {
   id: string;
+  name: string;
+  description: string;
+  styleProfileId: string;
+  defaultAssetType: AssetType;
+  defaultAssetId: string;
+}
+
+export interface AssetProfileSummary {
+  projectId: string;
+  assetType: AssetType;
+  assetId: string;
+  name: string;
+  canonicalKind: string;
+  canonicalLabel: string;
+  state?: string | null;
+  direction?: string | null;
+  reviewChecklist: string[];
+}
+
+export interface CatalogSummary {
+  projects: ProjectProfile[];
+  assets: AssetProfileSummary[];
+  defaultProjectId: string;
+  defaultAssetType: AssetType;
+  defaultAssetId: string;
+}
+
+export interface GenerationCandidate {
+  id: string;
+  projectId: string;
+  assetType: AssetType;
+  assetId: string;
+  state?: string | null;
+  direction?: string | null;
   seed: number;
   path: string;
   createdAt: string;
@@ -462,16 +506,34 @@ export interface CanonicalBaseCandidate {
   rejectReasons: string[];
   valid: boolean;
   validation?: QualityValidation | null;
+  prompt?: string;
+  negativePrompt?: string;
+  modelId?: string;
 }
 
-export interface CanonicalBaseSession {
+export interface AssetLabSession {
+  projectId: string;
+  projectName: string;
+  assetType: AssetType;
+  assetId: string;
+  assetName: string;
+  canonicalKind: string;
+  canonicalLabel: string;
+  state?: string | null;
+  direction?: string | null;
+  reviewChecklist: string[];
   modelId: string;
   prompt: string;
   negativePrompt: string;
-  candidates: CanonicalBaseCandidate[];
-  accepted?: CanonicalBaseCandidate | null;
+  generationEnabled: boolean;
+  candidates: GenerationCandidate[];
+  accepted?: GenerationCandidate | null;
+  referenceUnlocked: boolean;
   ipAdapterUnlocked: boolean;
   directionGenerationUnlocked: boolean;
   usingCurrentDirectionSet: boolean;
   notes: string[];
 }
+
+export type CanonicalBaseCandidate = GenerationCandidate;
+export type CanonicalBaseSession = AssetLabSession;

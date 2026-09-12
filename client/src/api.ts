@@ -1,4 +1,4 @@
-import type { CanonicalBaseSession, CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
+import type { AssetLabSession, AssetType, CanonicalBaseSession, CatalogSummary, CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
 
 export class ApiRequestError extends Error {
   details: string;
@@ -191,6 +191,26 @@ export const api = {
     request<MemoryEntry[]>(`/api/memory${characterId ? `?characterId=${characterId}` : ""}`),
   memorySuggestions: (characterId?: string) =>
     request<MemorySuggestions>(`/api/memory/suggestions${characterId ? `?characterId=${characterId}` : ""}`),
+  assetLabCatalog: () => request<CatalogSummary>("/api/tests/asset-lab/catalog"),
+  assetLabSession: (projectId: string, assetType: AssetType, assetId: string) =>
+    request<AssetLabSession>(
+      `/api/tests/asset-lab?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+    ),
+  generateAssetLab: (projectId: string, assetType: AssetType, assetId: string, count = 4) =>
+    request<AssetLabSession>("/api/tests/asset-lab/generate", {
+      method: "POST",
+      body: JSON.stringify({ projectId, assetType, assetId, count }),
+    }),
+  acceptAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
+    request<AssetLabSession>(
+      `/api/tests/asset-lab/accept/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+      { method: "POST", body: "{}" },
+    ),
+  rejectAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
+    request<AssetLabSession>(
+      `/api/tests/asset-lab/reject/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+      { method: "POST", body: "{}" },
+    ),
   canonicalBaseSession: () => request<CanonicalBaseSession>("/api/tests/berwynn-canonical"),
   generateCanonicalBase: (count = 4) =>
     request<CanonicalBaseSession>("/api/tests/berwynn-canonical/generate", {

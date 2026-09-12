@@ -13,6 +13,7 @@ build/
 .huggingface/
 huggingface/
 outputs/
+server/test_outputs/
 data/
 *.png
 !client/public/**

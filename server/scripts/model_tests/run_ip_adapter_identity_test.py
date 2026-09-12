@@ -1,7 +1,8 @@
 """Isolated IP-Adapter identity test on PublicPrompts/All-In-One-Pixel-Model.
 
 Not wired into Pixelator. No ControlNet, LoRA, rotation, or 8-dir generation.
-Requires a Berwynn South reference image and hard-fails if conditioning is missing.
+Requires an accepted Asset Lab canonical reference and hard-fails if conditioning is missing.
+Does not use the production Studio character store or the current direction set.
 """
 
 from __future__ import annotations
@@ -49,7 +50,15 @@ NEGATIVE_PROMPT = (
 )
 
 
-CANONICAL_ACCEPTED = Path(__file__).resolve().parents[3] / "data" / "test_review" / "berwynn" / "accepted" / "canonical.png"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+ASSET_LAB_ACCEPTED = (
+    REPO_ROOT / "data" / "projects" / "chimera" / "assets" / "characters" / "berwynn" / "accepted" / "canonical.png"
+)
+LEGACY_ACCEPTED = REPO_ROOT / "data" / "test_review" / "berwynn" / "accepted" / "canonical.png"
+
+
+def default_canonical_reference() -> Path:
+    return ASSET_LAB_ACCEPTED if ASSET_LAB_ACCEPTED.is_file() else LEGACY_ACCEPTED
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,24 +66,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reference",
         default="",
-        help="Accepted canonical Berwynn base. Defaults to data/test_review/berwynn/accepted/canonical.png.",
+        help="Accepted Asset Lab canonical PNG. Defaults to Chimera / Character / Berwynn accepted reference.",
     )
     return parser.parse_args()
 
 
 def assert_canonical_reference(path: Path) -> None:
-    normalized = str(path).replace("\\", "/").lower()
+    normalized = path.resolve().as_posix().replace("\\", "/").lower()
     if "/directions/" in normalized or "/states/" in normalized:
         raise RuntimeError("Hard fail: the current direction set cannot be used as identity source.")
-    if "/characters/" in normalized:
+    production_store = "/data/characters/" in normalized or normalized.endswith("/data/characters")
+    asset_lab_character = "/assets/characters/" in normalized
+    if production_store or ("/characters/" in normalized and not asset_lab_character and "/projects/" not in normalized):
         raise RuntimeError(
-            "Hard fail: the current Berwynn/Studio reference set cannot be used as identity source. "
-            "Accept a canonical south base first."
+            "Hard fail: the production Studio character store cannot be used as identity source. "
+            "Accept an Asset Lab canonical reference first."
         )
     if not path.is_file():
         raise RuntimeError(
-            f"Hard fail: no accepted canonical Berwynn base at {path}. "
-            "Use the Canonical Base review panel first."
+            f"Hard fail: no accepted canonical reference at {path}. "
+            "Use the Asset Lab review panel first."
         )
 
 
@@ -134,10 +145,10 @@ def main() -> int:
         print(f"dtype: {dtype}")
         print()
 
-        raw_reference = args.reference.strip() or str(CANONICAL_ACCEPTED)
+        raw_reference = args.reference.strip() or str(default_canonical_reference())
         reference_path, reference = load_reference_image(raw_reference)
         assert_canonical_reference(reference_path)
-        print("Using accepted canonical Berwynn base. Current direction set is not used.")
+        print("Using accepted Asset Lab canonical reference. Current direction set is not used.")
         print(f"reference image: {reference_path}")
         print(f"reference size: {reference.size[0]}x{reference.size[1]}")
         print()

@@ -12,6 +12,7 @@ from routers.characters import router as characters_router
 from routers.export import router as export_router
 from routers.generation import router as generation_router
 from routers.health import router as health_router
+from routers.asset_lab import router as asset_lab_router
 from routers.canonical_base import router as canonical_base_router
 from routers.library import router as library_router
 from routers.templates import router as templates_router
@@ -66,6 +67,7 @@ app.include_router(generation_router)
 app.include_router(export_router)
 app.include_router(templates_router)
 app.include_router(library_router)
+app.include_router(asset_lab_router)
 app.include_router(canonical_base_router)
 ensure_dirs()
 app.mount("/data", StaticFiles(directory=str(config.DATA_DIR)), name="data")

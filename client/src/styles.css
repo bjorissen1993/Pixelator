@@ -416,6 +416,12 @@ button.compass-cell { width: 100%; font: inherit; }
   .studio-side { position: static; }
 }
 
+.asset-lab-selectors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+}
 .canonical-checklist { margin: 0 0 12px; padding-left: 1.2rem; color: #c5d0c2; line-height: 1.55; }
 .canonical-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .canonical-card {
@@ -445,5 +451,5 @@ button.compass-cell { width: 100%; font: inherit; }
 .canonical-preview { width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; }
 .canonical-accepted { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center; }
 @media (max-width: 900px) {
-  .canonical-grid, .canonical-accepted { grid-template-columns: 1fr; }
+  .canonical-grid, .canonical-accepted, .asset-lab-selectors { grid-template-columns: 1fr; }
 }

@@ -1,53 +1,86 @@
-import { useEffect, useState } from "react";
-import type { CanonicalBaseSession } from "@shared";
+import { useEffect, useMemo, useState } from "react";
+import type { AssetLabSession, AssetType, CatalogSummary } from "@shared";
 import { api } from "../api";
 import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button } from "./ui";
 
-const TARGET = [
-  "Single character only",
-  "Full body, front/south-facing, centered, readable silhouette",
-  "Elderly male spirit, short messy grey/white hair, thick beard",
-  "Tired but kind stern face, broad slightly hunched shoulders",
-  "Worn dark village tunic, faded chief mantle, simple cloth/leather belt",
-  "No armor, no shoulder armor, no weapons",
-  "Lower body fades into a spectral ghost tail — no legs, no boots",
-  "Pale subtle blue spirit aura, melancholic protective presence",
-  "Plain or transparent background",
-];
+const DEFAULT_PROJECT = "chimera";
+const DEFAULT_TYPE: AssetType = "character";
+const DEFAULT_ASSET = "berwynn";
 
-export function CanonicalBaseScreen() {
+export function AssetLabScreen() {
   const { run, busy } = useWorkspace();
-  const [session, setSession] = useState<CanonicalBaseSession | null>(null);
+  const [catalog, setCatalog] = useState<CatalogSummary | null>(null);
+  const [projectId, setProjectId] = useState(DEFAULT_PROJECT);
+  const [assetType, setAssetType] = useState<AssetType>(DEFAULT_TYPE);
+  const [assetId, setAssetId] = useState(DEFAULT_ASSET);
+  const [session, setSession] = useState<AssetLabSession | null>(null);
 
-  const refresh = () =>
-    api.canonicalBaseSession().then(setSession);
+  const assetsForType = useMemo(
+    () => (catalog?.assets ?? []).filter((item) => item.projectId === projectId && item.assetType === assetType),
+    [catalog, projectId, assetType],
+  );
+
+  const refresh = (nextProject = projectId, nextType = assetType, nextAsset = assetId) =>
+    api.assetLabSession(nextProject, nextType, nextAsset).then(setSession);
 
   useEffect(() => {
-    void refresh().catch(() => undefined);
+    void api
+      .assetLabCatalog()
+      .then((summary) => {
+        setCatalog(summary);
+        setProjectId(summary.defaultProjectId);
+        setAssetType(summary.defaultAssetType);
+        setAssetId(summary.defaultAssetId);
+        return api.assetLabSession(summary.defaultProjectId, summary.defaultAssetType, summary.defaultAssetId);
+      })
+      .then(setSession)
+      .catch(() => undefined);
   }, []);
+
+  const selectType = (next: AssetType) => {
+    const first = (catalog?.assets ?? []).find((item) => item.projectId === projectId && item.assetType === next);
+    const nextAsset = first?.assetId ?? "";
+    setAssetType(next);
+    setAssetId(nextAsset);
+    setSession(null);
+    if (nextAsset) {
+      void refresh(projectId, next, nextAsset).catch(() => undefined);
+    }
+  };
+
+  const selectAsset = (next: string) => {
+    setAssetId(next);
+    setSession(null);
+    void refresh(projectId, assetType, next).catch(() => undefined);
+  };
+
+  const sessionMatches =
+    session?.projectId === projectId && session?.assetType === assetType && session?.assetId === assetId;
+  const checklist = sessionMatches ? session?.reviewChecklist ?? [] : [];
+  const canGenerate = sessionMatches && !!session?.generationEnabled;
 
   return (
     <div className="stack canonical-base">
       <section className="block">
         <div className="block-head">
           <div>
-            <h2>Canonical Berwynn base</h2>
+            <h2>Asset Lab</h2>
             <p className="hint">
-              Isolated south-facing identity creation. Studio generation and the current direction set
-              are not used as the identity source. IP-Adapter stays locked until one valid base is accepted.
-              Eight directions stay locked.
+              Canonical reference review for the selected asset. Pixelator is a general-purpose pixel-art
+              generator; Chimera / Berwynn is only the current vertical-slice test. Production Studio
+              generation is unchanged.
             </p>
           </div>
           <div className="chip-row">
             <Button
-              disabled={!!busy}
+              disabled={!!busy || !canGenerate}
               onClick={() =>
                 run(
-                  "Creating canonical Berwynn candidates",
+                  "Creating asset-lab candidates",
                   async () => {
-                    setSession(await api.generateCanonicalBase(4));
+                    setSession(await api.generateAssetLab(projectId, assetType, assetId, 4));
                   },
                   { generating: false },
                 )
@@ -57,40 +90,92 @@ export function CanonicalBaseScreen() {
             </Button>
           </div>
         </div>
-        <ul className="canonical-checklist">
-          {TARGET.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <div className="asset-lab-selectors">
+          <label className="field">
+            <span>Project</span>
+            <select value={projectId} disabled>
+              {(catalog?.projects ?? [{ id: DEFAULT_PROJECT, name: "Chimera" }]).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Asset type</span>
+            <select value={assetType} onChange={(event) => selectType(event.target.value as AssetType)}>
+              <option value="character">Character</option>
+              <option value="portrait">Portrait</option>
+              <option value="item">Item</option>
+              <option value="prop">Prop</option>
+              <option value="tile">Tile</option>
+              <option value="background">Background</option>
+              <option value="ui">UI</option>
+              <option value="vfx">VFX</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Asset</span>
+            <select value={assetId} onChange={(event) => selectAsset(event.target.value)} disabled={!assetsForType.length}>
+              {assetsForType.map((item) => (
+                <option key={item.assetId} value={item.assetId}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <p className="sprite-meta">
-          Model {session?.modelId || "PublicPrompts/All-In-One-Pixel-Model"} · raw 512×512 · no crop / resize /
-          background removal
+          {sessionMatches && session
+            ? `${session.projectName} → ${session.assetType} → ${session.assetName}`
+            : assetId
+              ? "Loading selected asset…"
+              : "No asset selected"}
+          {sessionMatches && session?.state ? ` · ${session.state}` : ""}
+          {sessionMatches && session?.direction ? ` · ${session.direction}` : ""}
         </p>
+        <p className="hint">{sessionMatches ? session?.canonicalLabel : ""}</p>
+        {checklist.length ? (
+          <ul className="canonical-checklist">
+            {checklist.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="hint">No review checklist for this asset yet.</p>
+        )}
+        <p className="sprite-meta">
+          Model {sessionMatches && session?.modelId ? session.modelId : canGenerate ? "configured" : "not implemented"} · isolated Asset Lab
+          {canGenerate ? " · raw 512×512 · no crop / resize / background removal" : ""}
+        </p>
+        {sessionMatches && !canGenerate ? (
+          <p className="hint">Generation for this asset type is not implemented yet. Architecture and validators are in place.</p>
+        ) : null}
       </section>
 
       <section className="block">
         <div className="block-head">
-          <h2>Accepted canonical base</h2>
+          <h2>Accepted canonical reference</h2>
         </div>
-        {session?.accepted ? (
+        {sessionMatches && session?.accepted ? (
           <div className="canonical-accepted">
             <img
-              alt="Accepted canonical Berwynn"
+              alt={`Accepted ${session.assetName} reference`}
               className="canonical-preview"
               src={assetUrl(session.accepted.path, session.accepted.createdAt)}
             />
             <div>
-              <p>Accepted seed {session.accepted.seed}. This is the only allowed IP-Adapter identity source.</p>
+              <p>Accepted seed {session.accepted.seed}. This is the only allowed later identity/reference source for this asset.</p>
               <p className="hint">
-                {session.ipAdapterUnlocked
-                  ? "IP-Adapter identity propagation is unlocked."
-                  : "IP-Adapter is still locked."}{" "}
+                {session.referenceUnlocked || session.ipAdapterUnlocked
+                  ? "Reference-conditioned follow-up is unlocked for this accepted asset."
+                  : "Reference-conditioned follow-up is still locked."}{" "}
                 Direction generation remains locked.
               </p>
             </div>
           </div>
         ) : (
-          <p className="hint">No canonical base accepted yet. Review candidates below.</p>
+          <p className="hint">No canonical reference accepted yet. Review candidates below.</p>
         )}
       </section>
 
@@ -99,7 +184,7 @@ export function CanonicalBaseScreen() {
           <h2>Review panel</h2>
         </div>
         <div className="canonical-grid">
-          {(session?.candidates ?? []).map((candidate) => (
+          {(sessionMatches ? session?.candidates ?? [] : []).map((candidate) => (
             <article
               className={`canonical-card ${candidate.valid ? "is-valid" : "is-invalid"} ${candidate.status}`}
               key={candidate.id}
@@ -110,7 +195,7 @@ export function CanonicalBaseScreen() {
               </header>
               <div className="canonical-stage">
                 <img
-                  alt={`Canonical candidate ${candidate.seed}`}
+                  alt={`${session?.assetName ?? "Asset"} candidate ${candidate.seed}`}
                   className="canonical-preview"
                   src={assetUrl(candidate.path, candidate.createdAt)}
                 />
@@ -122,14 +207,14 @@ export function CanonicalBaseScreen() {
                   ))}
                 </ul>
               ) : (
-                <p className="hint">Passed automatic canonical checks. Confirm the ghost tail by eye before accept.</p>
+                <p className="hint">Passed automatic checks. Confirm the checklist by eye before accept.</p>
               )}
               <div className="chip-row">
                 <Button
                   disabled={!!busy || !candidate.valid || candidate.status === "accepted"}
                   onClick={() =>
-                    run("Accepting canonical Berwynn base", async () => {
-                      setSession(await api.acceptCanonicalBase(candidate.id));
+                    run("Accepting canonical reference", async () => {
+                      setSession(await api.acceptAssetLab(candidate.id, projectId, assetType, assetId));
                     })
                   }
                 >
@@ -139,8 +224,8 @@ export function CanonicalBaseScreen() {
                   variant="danger"
                   disabled={!!busy || candidate.status === "rejected"}
                   onClick={() =>
-                    run("Rejecting canonical candidate", async () => {
-                      setSession(await api.rejectCanonicalBase(candidate.id));
+                    run("Rejecting candidate", async () => {
+                      setSession(await api.rejectAssetLab(candidate.id, projectId, assetType, assetId));
                     })
                   }
                 >
@@ -155,3 +240,5 @@ export function CanonicalBaseScreen() {
     </div>
   );
 }
+
+export const CanonicalBaseScreen = AssetLabScreen;

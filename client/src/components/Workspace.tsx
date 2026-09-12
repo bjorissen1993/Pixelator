@@ -8,7 +8,7 @@ import { EmotionScreen } from "./EmotionScreen";
 import { StudioScreen } from "./StudioScreen";
 import { LibraryScreen } from "./LibraryScreen";
 import { ExportScreen } from "./ExportScreen";
-import { CanonicalBaseScreen } from "./CanonicalBaseScreen";
+import { AssetLabScreen } from "./CanonicalBaseScreen";
 
 export function Workspace() {
   const {
@@ -33,7 +33,7 @@ export function Workspace() {
         <div className="brand">
           <span className="eyebrow">{provider?.id === "pixellab" ? "PixelLab API" : "Local-first"}</span>
           <h1>Pixelator</h1>
-          <p>Character System v2</p>
+          <p>Pixel-art asset studio</p>
         </div>
         <label className="field">
           <span>Character</span>
@@ -116,7 +116,7 @@ export function Workspace() {
         ) : null}
         <div className="content">
           {section === "studio" && <StudioScreen />}
-          {section === "canonicalBase" && <CanonicalBaseScreen />}
+          {(section === "canonicalBase" || section === "assetLab") && <AssetLabScreen />}
           {section === "identity" && (
             <>
               <CharacterScreen />
