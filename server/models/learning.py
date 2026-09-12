@@ -36,6 +36,7 @@ class LearningPolicy(BaseModel):
     applyConfidence: float = 0.60
     strongConfidence: float = 0.85
     exploitRatio: float = 0.8
+    qualityExploitRatio: float = 0.5
     exploreGuidanceDelta: float = 0.5
     exploreStepsDelta: int = 2
     exploreReferenceDelta: float = 0.1
@@ -118,6 +119,28 @@ class LearningControls(BaseModel):
     resetAfter: dict[str, str] = Field(default_factory=dict)
 
 
+class QualityDimensionInsight(BaseModel):
+    id: str
+    label: str
+    scope: str
+    learningClass: str = "global_quality"
+    evidence: int = 0
+    good: int = 0
+    bad: int = 0
+    successRate: float = 0
+    confidence: float = 0
+    bestGuidance: float | None = None
+    bestSteps: int | None = None
+    bestGuidanceMin: float | None = None
+    bestGuidanceMax: float | None = None
+    bestStepsMin: int | None = None
+    bestStepsMax: int | None = None
+    status: str = "no_data"
+    applies: bool = True
+    applied: bool = False
+    explanation: str = ""
+
+
 class LearningStats(BaseModel):
     attempts: int = 0
     accepted: int = 0
@@ -146,6 +169,7 @@ class LearningSnapshot(BaseModel):
     allocatedExploitRatio: float = 0
     allocatedExploreRatio: float = 0
     recommendations: list[RecipeAdjustment] = Field(default_factory=list)
+    qualityLearning: list[QualityDimensionInsight] = Field(default_factory=list)
     recipeScores: list[RecipeScore] = Field(default_factory=list)
     nextRecipe: GenerationRecipe | None = None
     why: list[str] = Field(default_factory=list)

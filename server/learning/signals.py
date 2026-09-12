@@ -7,6 +7,7 @@ from collections import Counter
 
 from models.catalog import LearningRecord
 from models.learning import LearningPolicy, RecipeAdjustment
+from learning.content_map import fragments_for_reasons, is_banned_quality_fragment
 from learning.context import LearningContext, SCOPE_WEIGHT, record_matches
 from learning.policy import confidence_for
 from learning.quality_first import is_quality_dimension_record
@@ -116,13 +117,13 @@ def _fragment_signals(
     accepted_counts: Counter[str] = Counter()
     for item in rejected:
         automatic, manual = split_rejection_reasons(item)
-        for token in {token for reason in automatic for token in tokens_from_reason(reason)}:
+        for token in fragments_for_reasons(automatic):
             auto_counts[token] += 1
-        for token in {token for reason in manual for token in tokens_from_reason(reason)}:
+        for token in fragments_for_reasons(manual):
             manual_counts[token] += 1
     for item in accepted:
         automatic, manual = split_rejection_reasons(item)
-        for token in {token for reason in [*automatic, *manual] for token in tokens_from_reason(reason)}:
+        for token in fragments_for_reasons([*automatic, *manual]):
             accepted_counts[token] += 1
     adjustments: list[RecipeAdjustment] = []
     source = context.source_label(scope)
@@ -146,7 +147,7 @@ def _fragment_signals(
         rejected_n = automatic_n + manual_n
         consistency = rejected_n / max(1, rejected_n + accepted_n)
         confidence, may_apply, band = confidence_for(evidence, consistency, policy)
-        if evidence < policy.minRecordOnly:
+        if evidence < policy.minRecordOnly or is_banned_quality_fragment(token):
             continue
         parts = []
         if manual_n:
@@ -169,10 +170,10 @@ def _fragment_signals(
                 automaticEvidence=round(automatic_evidence, 3),
                 applied=may_apply,
                 explanation=(
-                    f"Added negative fragment '{token}' because {origin} "
-                    f"{source} rejections mentioned it. Manual review is weighted higher than automatic checks."
+                    f"Added mapped content negative '{token}' because {origin} "
+                    f"{source} rejections mapped to that visual constraint."
                 ),
-                learningClass=learning_class_for(scope, context.assetType),
+                learningClass="asset_specific" if scope in {"asset", "state"} else scope,
             )
         )
         if band == "record":
@@ -188,7 +189,7 @@ def _numeric_signals(
     key: str,
     kind: str,
 ) -> list[RecipeAdjustment]:
-    scoped = _records_for(scope, context, records)
+    scoped = [item for item in _records_for(scope, context, records) if not is_quality_dimension_record(item)]
     accepted_values: list[float] = []
     rejected_values: list[float] = []
     for item in scoped:

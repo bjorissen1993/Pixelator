@@ -73,35 +73,36 @@ def promoted_quality_records(
                 reason=reason,
                 settings=settings,
                 quality_review=review,
+                dimension=field,
             )
         )
-    if review.transparencyExtraction == "bad":
-        records.append(
-            LearningRecord(
-                id=f"{record_id_prefix}-transparencyExtraction",
-                createdAt=created_at,
-                projectId=asset.projectId,
-                assetType=asset.assetType,
-                assetId=asset.assetId,
-                state=asset.state,
-                direction=asset.direction,
-                seed=candidate.seed,
-                modelId=candidate.modelId or asset.generation.modelId,
-                provider="isolated-asset-lab",
-                modelSettings=settings,
-                decision="rejected",
-                rejectionReasons=["transparency extraction failed"],
-                automaticRejectionReasons=[],
-                manualRejectionReasons=["transparency extraction failed"],
-                candidatePath=candidate.isolatedPath or candidate.path,
-                sha256=candidate.sha256,
-                scope="asset",
-                feedbackChannel="extraction",
-                reviewMode="quality_first",
-                qualityReview=review.model_dump(),
-                validationResults={"channel": "extraction", "dimension": "transparencyExtraction"},
-            )
+    extraction_bad = review.transparencyExtraction == "bad"
+    records.append(
+        LearningRecord(
+            id=f"{record_id_prefix}-transparencyExtraction",
+            createdAt=created_at,
+            projectId=asset.projectId,
+            assetType=asset.assetType,
+            assetId=asset.assetId,
+            state=asset.state,
+            direction=asset.direction,
+            seed=candidate.seed,
+            modelId=candidate.modelId or asset.generation.modelId,
+            provider="isolated-asset-lab",
+            modelSettings=settings,
+            decision="rejected" if extraction_bad else "accepted",
+            rejectionReasons=["transparency extraction failed"] if extraction_bad else [],
+            automaticRejectionReasons=[],
+            manualRejectionReasons=["transparency extraction failed"] if extraction_bad else [],
+            candidatePath=candidate.isolatedPath or candidate.path,
+            sha256=candidate.sha256,
+            scope="asset",
+            feedbackChannel="extraction",
+            reviewMode="quality_first",
+            qualityReview=review.model_dump(),
+            validationResults={"channel": "extraction", "dimension": "transparencyExtraction"},
         )
+    )
     return records
 
 
@@ -116,6 +117,7 @@ def _quality_record(
     reason: str,
     settings: dict[str, Any],
     quality_review: QualityReview,
+    dimension: str = "",
 ) -> LearningRecord:
     rejected = decision == "rejected"
     return LearningRecord(
@@ -146,5 +148,5 @@ def _quality_record(
         feedbackChannel="generation",
         reviewMode="quality_first",
         qualityReview=quality_review.model_dump(),
-        validationResults={"channel": "generation", "qualityFirst": True, "scope": scope},
+        validationResults={"channel": "generation", "qualityFirst": True, "scope": scope, "dimension": dimension},
     )

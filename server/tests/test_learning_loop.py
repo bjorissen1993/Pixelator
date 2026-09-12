@@ -46,6 +46,7 @@ def record(
     validator_feedback: str | None = None,
     feedback_channel: str = "generation",
     review_mode: str = "standard",
+    dimension: str | None = None,
 ) -> LearningRecord:
     automatic_reasons = automatic if automatic is not None else ([] if manual else reasons or [])
     manual_reasons = manual or []
@@ -67,7 +68,12 @@ def record(
         recipeFingerprint=fingerprint,
         manualRating=rating,
         seed=seed,
-        validationResults={"ok": valid, "validForBase": valid},
+        validationResults={
+            "ok": valid,
+            "validForBase": valid,
+            **({"qualityFirst": True, "channel": "generation"} if review_mode == "quality_first" and scope in {"global", "asset_type"} else {}),
+            **({"dimension": dimension} if dimension else {}),
+        },
         feedbackChannel=feedback_channel,  # type: ignore[arg-type]
         reviewMode=review_mode,  # type: ignore[arg-type]
     )
@@ -205,14 +211,14 @@ class LearningLoopTests(unittest.TestCase):
         self.assertNotIn("armor", trophy_vals)
         self.assertNotIn("armor", tile_vals)
         self.assertNotIn("armor", vfx_vals)
-        self.assertIn("isolated", trophy_vals)
-        self.assertNotIn("isolated", tile_vals)
-        self.assertNotIn("isolated", berwynn_vals)
-        self.assertIn("background", berwynn_vals)
-        self.assertIn("background", vfx_vals)
+        self.assertIn("extra objects", trophy_vals)
+        self.assertNotIn("extra objects", tile_vals)
+        self.assertNotIn("extra objects", berwynn_vals)
+        self.assertIn("busy background", berwynn_vals)
+        self.assertIn("busy background", vfx_vals)
         self.assertTrue(any(item.kind == "guidance" and item.sourceScope == "project" for item in berwynn.recommendations))
         self.assertFalse(any(item.kind == "guidance" and item.sourceScope == "project" for item in vfx.recommendations))
-        self.assertTrue(any(item.sourceScope == "global" and str(item.value) == "background" for item in vfx.recommendations))
+        self.assertTrue(any(item.sourceScope == "global" and str(item.value) == "busy background" for item in vfx.recommendations))
 
     def test_specificity_prefers_asset_over_type(self):
         records = [
@@ -246,7 +252,7 @@ class LearningLoopTests(unittest.TestCase):
             DEFAULT_POLICY,
         )
         armor = next(item for item in found if str(item.value) == "armor")
-        crop = next(item for item in found if str(item.value) == "cropped")
+        crop = next(item for item in found if str(item.value) == "cropped body")
         self.assertEqual(armor.sourceScope, "asset_type")
         self.assertEqual(crop.sourceScope, "asset")
 
@@ -519,14 +525,14 @@ class LearningLoopTests(unittest.TestCase):
         tile_vals = {str(item.value).lower() for item in tile.recommendations}
         vfx_vals = {str(item.value).lower() for item in vfx.recommendations}
         self.assertIn("legs", berwynn_vals)
-        self.assertIn("ghost", berwynn_vals)
+        self.assertIn("ghost tail", berwynn_vals)
         self.assertNotIn("legs", trophy_vals)
-        self.assertNotIn("ghost", trophy_vals)
+        self.assertNotIn("ghost tail", trophy_vals)
         self.assertNotIn("legs", tile_vals)
-        self.assertNotIn("ghost", tile_vals)
+        self.assertNotIn("ghost tail", tile_vals)
         self.assertNotIn("legs", vfx_vals)
-        self.assertIn("isolated", trophy_vals)
-        self.assertNotIn("isolated", berwynn_vals)
+        self.assertIn("extra objects", trophy_vals)
+        self.assertNotIn("extra objects", berwynn_vals)
         self.assertTrue(berwynn.stats.topManualReasons)
         self.assertFalse(trophy.stats.topAutomaticReasons)
 
@@ -595,7 +601,7 @@ class LearningLoopTests(unittest.TestCase):
             DEFAULT_POLICY,
         )
         values = {str(item.value).lower() for item in found}
-        self.assertIn("clothing", values)
+        self.assertIn("wrong clothing", values)
         self.assertNotIn("legs", values)
 
     def test_extraction_feedback_is_not_generation_learning(self):

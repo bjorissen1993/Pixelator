@@ -30,9 +30,16 @@ function qualityReviewComplete(review?: QualityReview | null) {
 function learningClassLabel(value?: string) {
   if (value === "global_quality") return "Global quality";
   if (value === "character_type_quality") return "Character-type quality";
+  if (value === "global") return "Global content";
   if (value === "project") return "Project-specific";
   if (value?.endsWith("_type_quality")) return `${value.replace("_type_quality", "")}-type quality`;
   return "Asset-specific";
+}
+
+function isQualityPromptNoise(item: { kind: string; value: string | number }) {
+  if (!String(item.kind).endsWith("fragment")) return false;
+  const token = String(item.value).toLowerCase();
+  return ["pixel", "readability", "technical", "quality", "proportions", "silhouette", "poor"].includes(token);
 }
 
 function extractionBadge(quality?: ExtractionQuality | null) {
@@ -365,8 +372,8 @@ export function AssetLabScreen() {
         <p className="hint">
           Recipe optimization only. The model is not being retrained.
           {qualityFirst
-            ? " Quality-first ratings choose better recipe settings. They do not add review words to the prompt. Content notes stay on this benchmark asset."
-            : " Asset-specific conclusions stay on this asset."}
+            ? " Quality ratings compare recipe settings. They never become prompt words. Content reasons use an explicit visual mapping."
+            : " Content reasons may add mapped prompt constraints. Quality ratings do not."}
         </p>
         <div className="learning-stats">
           <div className="learning-stat">
@@ -417,8 +424,28 @@ export function AssetLabScreen() {
             )}
           </div>
         </div>
+        {(learning?.qualityLearning ?? []).length ? (
+          <div className="quality-learning">
+            <h3>Quality learning</h3>
+            <div className="quality-learning-grid">
+              {(learning?.qualityLearning ?? []).map((item) => (
+                <article className="quality-learning-card" key={item.id}>
+                  <header>
+                    <strong>{item.label}</strong>
+                    <span className="sprite-meta">{learningClassLabel(item.learningClass)}</span>
+                  </header>
+                  <p className="hint">{item.explanation}</p>
+                  <p className="sprite-meta">
+                    {item.status === "confident" ? "Applied to next recipe" : item.status === "separate" ? "Post-processing only" : "Not applied yet"}
+                    {item.evidence ? ` · Evidence ${item.evidence}` : ""}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="learning-adjustments">
-          {(learning?.recommendations ?? []).map((item) => (
+          {(learning?.recommendations ?? []).filter((item) => !isQualityPromptNoise(item)).map((item) => (
             <article className={`learning-adjustment ${item.disabled ? "is-disabled" : ""}`} key={item.id}>
               <header>
                 <strong>

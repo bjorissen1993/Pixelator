@@ -6,6 +6,8 @@ from models.catalog import AssetProfile, LearningRecord
 from models.learning import LearningControls, LearningPolicy, LearningSnapshot, LearningStats, RecipeAdjustment
 from learning.context import LearningContext, record_matches
 from learning.policy import load_policy, unit_interval
+from learning.quality_first import is_quality_dimension_record
+from learning.quality_recipes import exploit_ratio_for, quality_insights, quality_setting_adjustments
 from learning.recipes import allocate_batch, build_next_recipe
 from learning.scoring import score_recipes
 from learning.signals import collect_signals, generation_records, split_rejection_reasons
@@ -85,6 +87,7 @@ def _stats(records: list[LearningRecord], context: LearningContext) -> LearningS
         if item.projectId == context.projectId
         and item.assetType == context.assetType
         and item.assetId == context.assetId
+        and not is_quality_dimension_record(item)
     ]
     accepted = sum(1 for item in scoped if item.decision == "accepted")
     rejected = sum(1 for item in scoped if item.decision == "rejected")
@@ -136,11 +139,15 @@ def resolve_learning(
         if _after_reset(item, controls, item.scope or "asset")
     ]
     recommendations = apply_controls(collect_signals(context, usable, policy), controls)
+    insights = quality_insights(asset, context, usable, policy)
+    quality_adjustments = apply_controls(quality_setting_adjustments(insights, policy), controls)
+    recommendations = [*recommendations, *quality_adjustments]
     recipe_scores = score_recipes(
         [
             item
             for item in usable
-            if record_matches(item, context, "asset") or record_matches(item, context, "state")
+            if not is_quality_dimension_record(item)
+            and (record_matches(item, context, "asset") or record_matches(item, context, "state"))
         ],
         policy,
     )
@@ -150,8 +157,8 @@ def resolve_learning(
     if not why:
         why = ["Using the asset's required generation spec. Learning has not crossed the apply threshold yet."]
     batch = max(1, int(batch_size if batch_size is not None else policy.previewBatchSize))
-    allocated_exploit, allocated_explore = allocate_batch(batch, policy.exploitRatio)
-    requested_exploit = unit_interval(policy.exploitRatio)
+    requested_exploit = unit_interval(exploit_ratio_for(asset, policy))
+    allocated_exploit, allocated_explore = allocate_batch(batch, requested_exploit)
     requested_explore = round(1 - requested_exploit, 3)
     return LearningSnapshot(
         projectId=asset.projectId,
@@ -171,6 +178,7 @@ def resolve_learning(
         allocatedExploitRatio=round(allocated_exploit / batch, 3),
         allocatedExploreRatio=round(allocated_explore / batch, 3),
         recommendations=recommendations,
+        qualityLearning=insights,
         recipeScores=recipe_scores[:8],
         nextRecipe=next_recipe,
         why=why,

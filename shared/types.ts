@@ -570,6 +570,28 @@ export interface LearningStats {
   topManualReasons?: string[];
 }
 
+export interface QualityDimensionInsight {
+  id: string;
+  label: string;
+  scope: string;
+  learningClass?: string;
+  evidence: number;
+  good?: number;
+  bad?: number;
+  successRate?: number;
+  confidence?: number;
+  bestGuidance?: number | null;
+  bestSteps?: number | null;
+  bestGuidanceMin?: number | null;
+  bestGuidanceMax?: number | null;
+  bestStepsMin?: number | null;
+  bestStepsMax?: number | null;
+  status?: string;
+  applies?: boolean;
+  applied?: boolean;
+  explanation: string;
+}
+
 export interface LearningSnapshot {
   projectId: string;
   assetType: AssetType;
@@ -587,6 +609,7 @@ export interface LearningSnapshot {
   allocatedExploitRatio?: number;
   allocatedExploreRatio?: number;
   recommendations: RecipeAdjustment[];
+  qualityLearning?: QualityDimensionInsight[];
   nextRecipe?: GenerationRecipe | null;
   why: string[];
 }

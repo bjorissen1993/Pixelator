@@ -523,6 +523,20 @@ button.compass-cell { width: 100%; font: inherit; }
 .quality-review-field legend { color: #7d8a72; font-size: 11px; padding: 0; }
 .quality-review-field label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
 .quality-review-field input { width: auto; }
+.quality-learning { display: grid; gap: 10px; }
+.quality-learning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.quality-learning-card {
+  border: 1px solid #273128;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+.quality-learning-card header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .isolation-badge { justify-self: start; text-transform: none; letter-spacing: 0.02em; }
 .status-badge.status-ok, .status-badge.status-good { background: #24351f; color: #c8ea83; }
 .status-badge.status-warning { background: #2a3218; color: #d6c27a; }
@@ -530,5 +544,5 @@ button.compass-cell { width: 100%; font: inherit; }
 .status-badge.status-skipped { background: #161b16; color: #6f7a6c; }
 .canonical-accepted { display: grid; grid-template-columns: minmax(240px, 1fr) 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) {
-  .canonical-grid, .canonical-accepted, .canonical-previews.has-isolated, .asset-lab-selectors, .learning-stats, .learning-evidence { grid-template-columns: 1fr; }
+  .canonical-grid, .canonical-accepted, .canonical-previews.has-isolated, .asset-lab-selectors, .learning-stats, .learning-evidence, .quality-learning-grid { grid-template-columns: 1fr; }
 }

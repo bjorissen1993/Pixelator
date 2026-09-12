@@ -5,7 +5,20 @@ from __future__ import annotations
 from models.catalog import AssetProfile
 from models.learning import GenerationRecipe, LearningControls, LearningPolicy, RecipeAdjustment, RecipeMode
 from learning.policy import unit_interval
+from learning.quality_first import is_quality_first
+from learning.quality_recipes import exploit_ratio_for
 from learning.scoring import recipe_fingerprint
+
+STANDARD_EXPLORE_PROFILES = (
+    {"guidance": 0.5, "steps": 2, "label": "nearby stronger / longer"},
+    {"guidance": -0.5, "steps": -2, "label": "nearby softer / shorter"},
+)
+QUALITY_EXPLORE_PROFILES = (
+    {"guidance": -0.7, "steps": -2, "label": "softer / shorter"},
+    {"guidance": 0.5, "steps": 2, "label": "stronger / longer"},
+    {"guidance": -0.5, "steps": 2, "label": "softer / longer"},
+    {"guidance": 0.8, "steps": -2, "label": "stronger / shorter"},
+)
 
 
 def nearest_int(value: float) -> int:
@@ -69,6 +82,7 @@ def build_next_recipe(
     policy: LearningPolicy,
     controls: LearningControls | None = None,
     mode: RecipeMode = "exploit",
+    explore_index: int = 0,
 ) -> GenerationRecipe:
     controls = controls or LearningControls()
     recipe = build_base_recipe(asset)
@@ -104,20 +118,27 @@ def build_next_recipe(
             applied.append(item)
 
     if mode == "explore":
-        optional = [item for item in recommendations if item.kind.endswith("fragment") and not item.applied and not item.disabled]
-        if optional:
-            extra = optional[0]
-            if extra.kind == "negative_fragment":
-                negatives.append(str(extra.value))
-            else:
-                positives.append(str(extra.value))
-            extra = extra.model_copy(update={"applied": True, "explanation": extra.explanation + " Explored as a nearby optional fragment."})
-            applied.append(extra)
-        guidance += policy.exploreGuidanceDelta
-        steps += policy.exploreStepsDelta
+        if not is_quality_first(asset):
+            optional = [item for item in recommendations if item.kind.endswith("fragment") and not item.applied and not item.disabled]
+            if optional:
+                extra = optional[0]
+                if extra.kind == "negative_fragment":
+                    negatives.append(str(extra.value))
+                else:
+                    positives.append(str(extra.value))
+                extra = extra.model_copy(update={"applied": True, "explanation": extra.explanation + " Explored as a nearby optional fragment."})
+                applied.append(extra)
+        profiles = QUALITY_EXPLORE_PROFILES if is_quality_first(asset) else STANDARD_EXPLORE_PROFILES
+        profile = profiles[explore_index % len(profiles)]
+        before_guidance = guidance
+        before_steps = steps
+        guidance += float(profile["guidance"])
+        steps += int(profile["steps"])
         if reference_strength is not None:
             reference_strength += policy.exploreReferenceDelta
-        recipe.why.append("This candidate explores nearby settings instead of locking the first success.")
+        recipe.why.append(
+            f"Explore {profile['label']}: guidance {before_guidance:g}→{guidance:g}, steps {before_steps}→{steps}."
+        )
 
     guidance = max(policy.minGuidance, min(policy.maxGuidance, guidance))
     steps = max(policy.minSteps, min(policy.maxSteps, steps))
@@ -146,6 +167,12 @@ def plan_candidate_recipes(
     controls: LearningControls | None = None,
 ) -> list[GenerationRecipe]:
     count = max(1, count)
-    exploit_n, explore_n = allocate_batch(count, policy.exploitRatio)
+    exploit_n, explore_n = allocate_batch(count, exploit_ratio_for(asset, policy))
     modes: list[RecipeMode] = ["exploit"] * exploit_n + ["explore"] * explore_n
-    return [build_next_recipe(asset, recommendations, policy, controls, mode) for mode in modes]
+    recipes: list[GenerationRecipe] = []
+    explore_index = 0
+    for mode in modes:
+        recipes.append(build_next_recipe(asset, recommendations, policy, controls, mode, explore_index))
+        if mode == "explore":
+            explore_index += 1
+    return recipes
