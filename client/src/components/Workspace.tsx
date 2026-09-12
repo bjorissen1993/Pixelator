@@ -8,6 +8,7 @@ import { EmotionScreen } from "./EmotionScreen";
 import { StudioScreen } from "./StudioScreen";
 import { LibraryScreen } from "./LibraryScreen";
 import { ExportScreen } from "./ExportScreen";
+import { CanonicalBaseScreen } from "./CanonicalBaseScreen";
 
 export function Workspace() {
   const {
@@ -115,6 +116,7 @@ export function Workspace() {
         ) : null}
         <div className="content">
           {section === "studio" && <StudioScreen />}
+          {section === "canonicalBase" && <CanonicalBaseScreen />}
           {section === "identity" && (
             <>
               <CharacterScreen />

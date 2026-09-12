@@ -1,4 +1,4 @@
-import type { CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
+import type { CanonicalBaseSession, CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
 
 export class ApiRequestError extends Error {
   details: string;
@@ -191,4 +191,14 @@ export const api = {
     request<MemoryEntry[]>(`/api/memory${characterId ? `?characterId=${characterId}` : ""}`),
   memorySuggestions: (characterId?: string) =>
     request<MemorySuggestions>(`/api/memory/suggestions${characterId ? `?characterId=${characterId}` : ""}`),
+  canonicalBaseSession: () => request<CanonicalBaseSession>("/api/tests/berwynn-canonical"),
+  generateCanonicalBase: (count = 4) =>
+    request<CanonicalBaseSession>("/api/tests/berwynn-canonical/generate", {
+      method: "POST",
+      body: JSON.stringify({ count }),
+    }),
+  acceptCanonicalBase: (candidateId: string) =>
+    request<CanonicalBaseSession>(`/api/tests/berwynn-canonical/accept/${candidateId}`, { method: "POST", body: "{}" }),
+  rejectCanonicalBase: (candidateId: string) =>
+    request<CanonicalBaseSession>(`/api/tests/berwynn-canonical/reject/${candidateId}`, { method: "POST", body: "{}" }),
 };

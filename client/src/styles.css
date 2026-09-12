@@ -415,3 +415,35 @@ button.compass-cell { width: 100%; font: inherit; }
   .studio { grid-template-columns: 1fr; }
   .studio-side { position: static; }
 }
+
+.canonical-checklist { margin: 0 0 12px; padding-left: 1.2rem; color: #c5d0c2; line-height: 1.55; }
+.canonical-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.canonical-card {
+  border: 1px solid #273128;
+  background: #0e1411;
+  border-radius: 18px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.canonical-card.is-invalid { border-color: #5a2f2f; }
+.canonical-card.is-valid { border-color: #3a4d2a; }
+.canonical-card.accepted { border-color: #c8ea83; }
+.canonical-card.rejected { opacity: 0.62; }
+.canonical-card header { display: flex; justify-content: space-between; gap: 8px; }
+.canonical-card h3 { margin: 0; font-size: 15px; }
+.canonical-stage {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background:
+    linear-gradient(45deg, #1a221c 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(45deg, transparent 75%, #1a221c 75%) 0 0 / 16px 16px,
+    #121a15;
+}
+.canonical-preview { width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; }
+.canonical-accepted { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center; }
+@media (max-width: 900px) {
+  .canonical-grid, .canonical-accepted { grid-template-columns: 1fr; }
+}

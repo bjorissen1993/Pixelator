@@ -448,6 +448,30 @@ export interface MemorySuggestions {
 }
 
 export interface WorkspaceSection {
-  id: "studio" | "identity" | "library" | "export";
+  id: "studio" | "identity" | "library" | "export" | "canonicalBase";
   label: string;
+}
+
+export interface CanonicalBaseCandidate {
+  id: string;
+  seed: number;
+  path: string;
+  createdAt: string;
+  status: "pending" | "accepted" | "rejected" | string;
+  sha256: string;
+  rejectReasons: string[];
+  valid: boolean;
+  validation?: QualityValidation | null;
+}
+
+export interface CanonicalBaseSession {
+  modelId: string;
+  prompt: string;
+  negativePrompt: string;
+  candidates: CanonicalBaseCandidate[];
+  accepted?: CanonicalBaseCandidate | null;
+  ipAdapterUnlocked: boolean;
+  directionGenerationUnlocked: boolean;
+  usingCurrentDirectionSet: boolean;
+  notes: string[];
 }

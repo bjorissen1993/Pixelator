@@ -49,10 +49,33 @@ NEGATIVE_PROMPT = (
 )
 
 
+CANONICAL_ACCEPTED = Path(__file__).resolve().parents[3] / "data" / "test_review" / "berwynn" / "accepted" / "canonical.png"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Isolated PublicPrompts IP-Adapter identity test.")
-    parser.add_argument("--reference", required=True, help="Path to an accepted Berwynn South reference image.")
+    parser.add_argument(
+        "--reference",
+        default="",
+        help="Accepted canonical Berwynn base. Defaults to data/test_review/berwynn/accepted/canonical.png.",
+    )
     return parser.parse_args()
+
+
+def assert_canonical_reference(path: Path) -> None:
+    normalized = str(path).replace("\\", "/").lower()
+    if "/directions/" in normalized or "/states/" in normalized:
+        raise RuntimeError("Hard fail: the current direction set cannot be used as identity source.")
+    if "/characters/" in normalized:
+        raise RuntimeError(
+            "Hard fail: the current Berwynn/Studio reference set cannot be used as identity source. "
+            "Accept a canonical south base first."
+        )
+    if not path.is_file():
+        raise RuntimeError(
+            f"Hard fail: no accepted canonical Berwynn base at {path}. "
+            "Use the Canonical Base review panel first."
+        )
 
 
 def load_reference_image(raw_path: str):
@@ -111,7 +134,10 @@ def main() -> int:
         print(f"dtype: {dtype}")
         print()
 
-        reference_path, reference = load_reference_image(args.reference)
+        raw_reference = args.reference.strip() or str(CANONICAL_ACCEPTED)
+        reference_path, reference = load_reference_image(raw_reference)
+        assert_canonical_reference(reference_path)
+        print("Using accepted canonical Berwynn base. Current direction set is not used.")
         print(f"reference image: {reference_path}")
         print(f"reference size: {reference.size[0]}x{reference.size[1]}")
         print()

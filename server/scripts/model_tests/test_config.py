@@ -95,8 +95,9 @@ REJECTED_SOUTH_BASE_MODELS = {
         ],
         "notes": (
             "Not accepted as a pure text-only canonical Berwynn generator. "
-            "Keep as the current rendering backbone. Stop testing more random text-only pixel models. "
-            "Next isolated phase is IP-Adapter identity conditioning. Do not integrate into production yet."
+            "Keep as the current rendering backbone for isolated canonical-base creation. "
+            "Do not use the current Studio/direction-set images as identity. "
+            "IP-Adapter stays locked until a canonical south base is accepted."
         ),
     },
 }
