@@ -1,4 +1,4 @@
-import type { AssetLabSession, AssetType, CanonicalBaseSession, CatalogSummary, CharacterProfile, Direction, GenerationProgress, GenerationResult, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
+import type { AssetLabSession, AssetType, CanonicalBaseSession, CatalogSummary, CharacterProfile, Direction, GenerationProgress, GenerationResult, LearningSnapshot, MemoryEntry, MemorySuggestions, ProviderInfo, StateTemplate, StyleProfile, GenerationJob, ApiErrorPayload } from "@shared";
 
 export class ApiRequestError extends Error {
   details: string;
@@ -211,6 +211,24 @@ export const api = {
       `/api/tests/asset-lab/reject/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
       { method: "POST", body: "{}" },
     ),
+  assetLabLearning: (projectId: string, assetType: AssetType, assetId: string) =>
+    request<LearningSnapshot>(
+      `/api/tests/asset-lab/learning?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+    ),
+  controlAssetLabLearning: (body: {
+    projectId: string;
+    assetType: AssetType;
+    assetId: string;
+    recommendationId?: string;
+    pinKind?: string;
+    pinValue?: string | number;
+    resetScope?: "global" | "project" | "asset_type" | "asset" | "state";
+    confirmGlobal?: boolean;
+  }) =>
+    request<LearningSnapshot>("/api/tests/asset-lab/learning/control", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   canonicalBaseSession: () => request<CanonicalBaseSession>("/api/tests/berwynn-canonical"),
   generateCanonicalBase: (count = 4) =>
     request<CanonicalBaseSession>("/api/tests/berwynn-canonical/generate", {

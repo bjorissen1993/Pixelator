@@ -111,6 +111,12 @@ class LearningRecord(BaseModel):
     manualRating: int | None = None
     candidatePath: str = ""
     sha256: str = ""
+    scope: Literal["global", "project", "asset_type", "asset", "state"] = "asset"
+    recipeFingerprint: str = ""
+    recipeMode: str = ""
+    referenceStrategy: str = "none"
+    referenceStrength: float | None = None
+    learnedAdjustments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class GenerationCandidate(BaseModel):
@@ -132,6 +138,10 @@ class GenerationCandidate(BaseModel):
     negativePrompt: str = ""
     modelId: str = ""
     modelSettings: dict[str, Any] = Field(default_factory=dict)
+    recipeFingerprint: str = ""
+    recipeMode: str = ""
+    learnedAdjustments: list[dict[str, Any]] = Field(default_factory=list)
+    recipeWhy: list[str] = Field(default_factory=list)
 
 
 class AssetLabSession(BaseModel):
@@ -156,6 +166,7 @@ class AssetLabSession(BaseModel):
     directionGenerationUnlocked: bool = False
     usingCurrentDirectionSet: bool = False
     notes: list[str] = Field(default_factory=list)
+    learning: dict[str, Any] | None = None
 
 
 class AssetLabGenerateRequest(BaseModel):

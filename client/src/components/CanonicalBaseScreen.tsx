@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AssetLabSession, AssetType, CatalogSummary } from "@shared";
+import type { AssetLabSession, AssetType, CatalogSummary, LearningSnapshot } from "@shared";
 import { api } from "../api";
 import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -74,6 +74,11 @@ export function AssetLabScreen() {
     session?.projectId === projectId && session?.assetType === assetType && session?.assetId === assetId;
   const checklist = sessionMatches ? session?.reviewChecklist ?? [] : [];
   const canGenerate = sessionMatches && !!session?.generationEnabled;
+  const learning = sessionMatches ? session?.learning ?? null : null;
+
+  const applyLearning = (next: LearningSnapshot) => {
+    setSession((current) => (current ? { ...current, learning: next } : current));
+  };
 
   return (
     <div className="stack canonical-base">
@@ -173,6 +178,172 @@ export function AssetLabScreen() {
 
       <section className="block">
         <div className="block-head">
+          <h2>Learning</h2>
+        </div>
+        <p className="hint">
+          Recipe optimization only. The model is not being retrained. Asset-specific conclusions stay on this asset.
+        </p>
+        <div className="learning-stats">
+          <div className="learning-stat">
+            <span>Attempts</span>
+            <strong>{learning?.stats.attempts ?? 0}</strong>
+          </div>
+          <div className="learning-stat">
+            <span>Accepted</span>
+            <strong>{learning?.stats.accepted ?? 0}</strong>
+          </div>
+          <div className="learning-stat">
+            <span>Rejected</span>
+            <strong>{learning?.stats.rejected ?? 0}</strong>
+          </div>
+          <div className="learning-stat">
+            <span>Success rate</span>
+            <strong>{Math.round((learning?.stats.successRate ?? 0) * 100)}%</strong>
+          </div>
+        </div>
+        <p className="sprite-meta">
+          Exploitation {Math.round((learning?.exploitRatio ?? 0.8) * 100)}% · exploration{" "}
+          {Math.round((learning?.exploreRatio ?? 0.2) * 100)}%
+        </p>
+        {learning?.stats.topRejectionReasons.length ? (
+          <ul className="canonical-checklist">
+            {learning.stats.topRejectionReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="hint">No rejection reasons recorded for this asset yet.</p>
+        )}
+        <div className="learning-adjustments">
+          {(learning?.recommendations ?? []).map((item) => (
+            <article className={`learning-adjustment ${item.disabled ? "is-disabled" : ""}`} key={item.id}>
+              <header>
+                <strong>
+                  {item.kind.replace("_", " ")} · {String(item.value)}
+                </strong>
+                <span className="sprite-meta">
+                  {item.pinned ? "pinned" : item.applied ? "active" : item.disabled ? "disabled" : "recorded"} ·{" "}
+                  {Math.round(item.confidence * 100)}% · {item.evidence} evidence
+                </span>
+              </header>
+              <p className="hint">{item.explanation}</p>
+              <p className="sprite-meta">Source {item.source}</p>
+              <div className="chip-row">
+                <Button
+                  disabled={!!busy || item.disabled}
+                  onClick={() =>
+                    run("Disabling learned recommendation", async () => {
+                      applyLearning(
+                        await api.controlAssetLabLearning({
+                          projectId,
+                          assetType,
+                          assetId,
+                          recommendationId: item.id,
+                        }),
+                      );
+                    })
+                  }
+                >
+                  Disable
+                </Button>
+                {item.kind.endsWith("fragment") ? (
+                  <Button
+                    disabled={!!busy || item.pinned}
+                    onClick={() =>
+                      run("Pinning prompt fragment", async () => {
+                        applyLearning(
+                          await api.controlAssetLabLearning({
+                            projectId,
+                            assetType,
+                            assetId,
+                            pinKind: item.kind,
+                            pinValue: item.value,
+                          }),
+                        );
+                      })
+                    }
+                  >
+                    Pin
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={!!busy || item.pinned}
+                    onClick={() =>
+                      run("Pinning setting", async () => {
+                        applyLearning(
+                          await api.controlAssetLabLearning({
+                            projectId,
+                            assetType,
+                            assetId,
+                            pinKind: item.kind,
+                            pinValue: item.value,
+                          }),
+                        );
+                      })
+                    }
+                  >
+                    Pin
+                  </Button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+        {!learning?.recommendations.length ? <p className="hint">No learned adjustments yet for this asset.</p> : null}
+        <h3>Next recipe</h3>
+        {(learning?.why ?? []).map((line) => (
+          <p className="hint" key={line}>
+            {line}
+          </p>
+        ))}
+        {learning?.nextRecipe ? (
+          <p className="sprite-meta">
+            Guidance {learning.nextRecipe.guidance} · steps {learning.nextRecipe.steps}
+            {learning.nextRecipe.referenceStrength != null ? ` · ref ${learning.nextRecipe.referenceStrength}` : ""}
+          </p>
+        ) : null}
+        <div className="chip-row">
+          <Button
+            disabled={!!busy || !assetId}
+            onClick={() =>
+              run("Resetting asset learning", async () => {
+                applyLearning(
+                  await api.controlAssetLabLearning({ projectId, assetType, assetId, resetScope: "asset" }),
+                );
+              })
+            }
+          >
+            Reset asset
+          </Button>
+          <Button
+            disabled={!!busy || !assetId}
+            onClick={() =>
+              run("Resetting asset-type learning", async () => {
+                applyLearning(
+                  await api.controlAssetLabLearning({ projectId, assetType, assetId, resetScope: "asset_type" }),
+                );
+              })
+            }
+          >
+            Reset asset type
+          </Button>
+          <Button
+            disabled={!!busy || !assetId}
+            onClick={() =>
+              run("Resetting project learning", async () => {
+                applyLearning(
+                  await api.controlAssetLabLearning({ projectId, assetType, assetId, resetScope: "project" }),
+                );
+              })
+            }
+          >
+            Reset project
+          </Button>
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="block-head">
           <h2>Accepted canonical reference</h2>
         </div>
         {sessionMatches && session?.accepted ? (
@@ -209,7 +380,10 @@ export function AssetLabScreen() {
             >
               <header>
                 <h3>Seed {candidate.seed}</h3>
-                <span className="sprite-meta">{candidate.status}</span>
+                <span className="sprite-meta">
+                  {candidate.status}
+                  {candidate.recipeMode ? ` · ${candidate.recipeMode}` : ""}
+                </span>
               </header>
               <div className="canonical-stage">
                 <img

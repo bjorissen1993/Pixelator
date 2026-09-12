@@ -35,8 +35,10 @@ from persistence.projects import (
     seed_project_placeholders,
     session_path,
 )
+from learning.recipes import plan_candidate_recipes
+from learning.store import load_controls
 from processing.validators import validate_candidate
-from services.learning import write_learning_record
+from services.learning import snapshot_for, write_learning_record
 from services.legacy_review import migrate_legacy_review
 
 MODEL_TESTS_DIR = Path(__file__).resolve().parents[1] / "scripts" / "model_tests"
@@ -235,6 +237,7 @@ def load_session(
         _apply_followup_locks(session, asset, unlocked)
     else:
         _apply_followup_locks(session, asset, False)
+    session.learning = snapshot_for(asset).model_dump()
     return session
 
 
@@ -288,30 +291,39 @@ def generate_candidates(
         raise ValueError(f"Generation is not enabled for {asset.projectId}/{asset.assetType}/{asset.assetId}.")
     spec = asset.generation
     count = max(1, min(4, int(count)))
-    pipe, loaded_id = _load_pipe(spec.modelId, spec.prompt, spec.negativePrompt)
+    snapshot = snapshot_for(asset)
+    recipes = plan_candidate_recipes(
+        asset,
+        snapshot.recommendations,
+        snapshot.policy,
+        count,
+        load_controls(asset.projectId, asset.assetType, asset.assetId),
+    )
+    base_recipe = recipes[0]
+    pipe, loaded_id = _load_pipe(spec.modelId, base_recipe.prompt or spec.prompt, base_recipe.negativePrompt or spec.negativePrompt)
     session = load_session(project_id, asset_type, asset_id)
     session.modelId = loaded_id or spec.modelId
-    session.prompt = spec.prompt
-    session.negativePrompt = spec.negativePrompt
+    session.prompt = base_recipe.prompt
+    session.negativePrompt = base_recipe.negativePrompt
     session.directionGenerationUnlocked = False
     session.usingCurrentDirectionSet = False
     dest_dir = candidate_dir(project_id, asset_type, asset_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
     style = get_style(project_id)
-    settings = {"width": spec.width, "height": spec.height, "steps": spec.steps, "guidance": spec.guidance}
 
-    for _ in range(count):
+    for recipe in recipes:
         seed = int(time.time() * 1000) % 1_000_000_000 + uuid4().int % 90_000
+        recipe.seed = seed
         candidate_id = uuid4().hex[:10]
         dest = dest_dir / f"{candidate_id}.png"
         generator = torch.Generator(device="cuda").manual_seed(seed)
         image = pipe(
-            prompt=spec.prompt,
-            negative_prompt=spec.negativePrompt,
-            width=spec.width,
-            height=spec.height,
-            num_inference_steps=spec.steps,
-            guidance_scale=spec.guidance,
+            prompt=recipe.prompt or spec.prompt,
+            negative_prompt=recipe.negativePrompt or spec.negativePrompt,
+            width=recipe.width,
+            height=recipe.height,
+            num_inference_steps=recipe.steps,
+            guidance_scale=recipe.guidance,
             generator=generator,
         ).images[0]
         image.save(dest)
@@ -333,12 +345,24 @@ def generate_candidates(
                 rejectReasons=reasons,
                 valid=not reasons,
                 validation=validation,
-                prompt=spec.prompt,
-                negativePrompt=spec.negativePrompt,
+                prompt=recipe.prompt,
+                negativePrompt=recipe.negativePrompt,
                 modelId=loaded_id or spec.modelId,
-                modelSettings=settings,
+                modelSettings={
+                    "width": recipe.width,
+                    "height": recipe.height,
+                    "steps": recipe.steps,
+                    "guidance": recipe.guidance,
+                    "referenceStrength": recipe.referenceStrength,
+                    "referenceStrategy": recipe.referenceStrategy,
+                },
+                recipeFingerprint=recipe.fingerprint,
+                recipeMode=recipe.mode,
+                learnedAdjustments=[item.model_dump() for item in recipe.adjustments],
+                recipeWhy=recipe.why,
             ),
         )
+    session.learning = snapshot_for(asset).model_dump()
     save_session(session)
     return session
 
@@ -376,6 +400,11 @@ def _record_decision(
             rejectionReasons=list(extra_reasons or candidate.rejectReasons),
             candidatePath=candidate.path,
             sha256=candidate.sha256,
+            recipeFingerprint=candidate.recipeFingerprint,
+            recipeMode=candidate.recipeMode,
+            referenceStrategy=str((candidate.modelSettings or {}).get("referenceStrategy") or "none"),
+            referenceStrength=(candidate.modelSettings or {}).get("referenceStrength"),
+            learnedAdjustments=candidate.learnedAdjustments,
         )
     )
 
@@ -409,8 +438,9 @@ def accept_candidate(
             item.status = "rejected"
     session.accepted = chosen
     _apply_followup_locks(session, asset, True)
-    save_session(session)
     _record_decision(asset, chosen, "accepted")
+    session.learning = snapshot_for(asset).model_dump()
+    save_session(session)
     return session
 
 
@@ -440,6 +470,7 @@ def reject_candidate(
         if accepted.exists():
             accepted.unlink()
     _apply_followup_locks(session, asset, False)
-    save_session(session)
     _record_decision(asset, chosen, "rejected")
+    session.learning = snapshot_for(asset).model_dump()
+    save_session(session)
     return session

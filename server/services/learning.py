@@ -7,12 +7,21 @@ asset-specific reason to a global rule.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import config
-from models.catalog import LearningRecord
+from models.catalog import AssetProfile, LearningRecord
+from models.learning import LearningControlRequest, LearningSnapshot
 from persistence.projects import ASSET_TYPE_FOLDERS, learning_dir, project_root
+from learning.resolver import resolve_learning
+from learning.store import (
+    disable_recommendation,
+    load_controls,
+    load_records,
+    pin_fragment,
+    pin_setting,
+    reset_learning,
+)
 
 
 def _append_jsonl(path: Path, record: LearningRecord) -> None:
@@ -32,3 +41,40 @@ def write_learning_record(record: LearningRecord) -> LearningRecord:
     _append_jsonl(project_root(record.projectId) / "assets" / type_folder / "learning.jsonl", record)
     _append_jsonl(asset_folder / "events.jsonl", record)
     return record
+
+
+def snapshot_for(asset: AssetProfile) -> LearningSnapshot:
+    return resolve_learning(
+        asset,
+        load_records(),
+        load_controls(asset.projectId, asset.assetType, asset.assetId),
+    )
+
+
+def apply_learning_control(payload: LearningControlRequest) -> LearningSnapshot:
+    if payload.resetScope:
+        reset_learning(
+            payload.projectId,
+            payload.assetType,
+            payload.assetId,
+            payload.resetScope,
+            payload.confirmGlobal,
+        )
+    elif payload.recommendationId:
+        disable_recommendation(payload.projectId, payload.assetType, payload.assetId, payload.recommendationId)
+    elif payload.pinKind and payload.pinValue is not None:
+        if payload.pinKind in {"guidance", "steps", "referenceStrength", "reference_strength"}:
+            key = "referenceStrength" if "reference" in payload.pinKind else payload.pinKind
+            pin_setting(payload.projectId, payload.assetType, payload.assetId, key, payload.pinValue)
+        else:
+            pin_fragment(
+                payload.projectId,
+                payload.assetType,
+                payload.assetId,
+                payload.pinKind,
+                str(payload.pinValue),
+            )
+    from domain.catalog import get_asset
+
+    asset = get_asset(payload.projectId, payload.assetType, payload.assetId)
+    return snapshot_for(asset)

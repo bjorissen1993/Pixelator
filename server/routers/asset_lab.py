@@ -1,7 +1,10 @@
 from fastapi import APIRouter
 
+from domain.catalog import get_asset
 from models.catalog import AssetLabGenerateRequest, AssetType
+from models.learning import LearningControlRequest
 from services import asset_lab as asset_lab_service
+from services import learning as learning_service
 from services.errors import http_error
 
 router = APIRouter()
@@ -66,3 +69,24 @@ def reject(
         return asset_lab_service.reject_candidate(candidate_id, project_id, asset_type, asset_id)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_reject", "candidateId": candidate_id})
+
+
+@router.get("/api/tests/asset-lab/learning")
+def get_learning(
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
+):
+    try:
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return learning_service.snapshot_for(get_asset(project_id, asset_type, asset_id))
+    except Exception as exc:
+        http_error(exc, context={"action": "asset_lab_learning"})
+
+
+@router.post("/api/tests/asset-lab/learning/control")
+def control_learning(payload: LearningControlRequest):
+    try:
+        return learning_service.apply_learning_control(payload)
+    except Exception as exc:
+        http_error(exc, context={"action": "asset_lab_learning_control"})

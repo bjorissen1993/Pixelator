@@ -492,6 +492,61 @@ export interface CatalogSummary {
   defaultAssetId: string;
 }
 
+export interface RecipeAdjustment {
+  id: string;
+  kind: string;
+  value: string | number;
+  sourceScope: string;
+  source: string;
+  confidence: number;
+  accepted: number;
+  rejected: number;
+  evidence: number;
+  applied: boolean;
+  disabled: boolean;
+  pinned: boolean;
+  explanation: string;
+}
+
+export interface GenerationRecipe {
+  modelId: string;
+  prompt: string;
+  negativePrompt: string;
+  guidance: number;
+  steps: number;
+  width: number;
+  height: number;
+  referenceStrategy: string;
+  referenceStrength?: number | null;
+  fingerprint: string;
+  mode: string;
+  seed?: number | null;
+  adjustments: RecipeAdjustment[];
+  why: string[];
+}
+
+export interface LearningStats {
+  attempts: number;
+  accepted: number;
+  rejected: number;
+  successRate: number;
+  topRejectionReasons: string[];
+}
+
+export interface LearningSnapshot {
+  projectId: string;
+  assetType: AssetType;
+  assetId: string;
+  state?: string | null;
+  direction?: string | null;
+  stats: LearningStats;
+  exploitRatio: number;
+  exploreRatio: number;
+  recommendations: RecipeAdjustment[];
+  nextRecipe?: GenerationRecipe | null;
+  why: string[];
+}
+
 export interface GenerationCandidate {
   id: string;
   projectId: string;
@@ -510,6 +565,9 @@ export interface GenerationCandidate {
   prompt?: string;
   negativePrompt?: string;
   modelId?: string;
+  recipeFingerprint?: string;
+  recipeMode?: string;
+  recipeWhy?: string[];
 }
 
 export interface AssetLabSession {
@@ -534,6 +592,7 @@ export interface AssetLabSession {
   directionGenerationUnlocked: boolean;
   usingCurrentDirectionSet: boolean;
   notes: string[];
+  learning?: LearningSnapshot | null;
 }
 
 export type CanonicalBaseCandidate = GenerationCandidate;
