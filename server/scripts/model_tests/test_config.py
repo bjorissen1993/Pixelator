@@ -78,4 +78,25 @@ REJECTED_SOUTH_BASE_MODELS = {
             "Keep the isolated outputs for comparison."
         ),
     },
+    "PublicPrompts/All-In-One-Pixel-Model": {
+        "status": "rejected_text_only_canonical",
+        "role": "canonical South-base character generator (text-only)",
+        "date": "2026-09-12",
+        "kept_as": "current rendering backbone for image-conditioned IP-Adapter tests",
+        "keep_outputs": [
+            "server/test_outputs/publicprompts_all_in_one_pixel/",
+            "server/test_outputs/publicprompts_all_in_one_pixel_run2/",
+        ],
+        "reasons": [
+            "Consistently one full-body pixel character; elderly male + beard followed reasonably well",
+            "Text-only generation cannot reliably preserve Berwynn's defining silhouette",
+            "Spectral ghost tail is ignored and legs remain",
+            "Clothing, accessories, and identity change too much between seeds",
+        ],
+        "notes": (
+            "Not accepted as a pure text-only canonical Berwynn generator. "
+            "Keep as the current rendering backbone. Stop testing more random text-only pixel models. "
+            "Next isolated phase is IP-Adapter identity conditioning. Do not integrate into production yet."
+        ),
+    },
 }

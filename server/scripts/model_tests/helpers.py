@@ -278,3 +278,44 @@ def apply_lora_strength(pipe, adapter_name: str, strength: float) -> dict:
 
 def strength_tag(strength: float) -> str:
     return f"strength{int(round(strength * 100)):03d}"
+
+
+def inspect_ip_adapter(pipe) -> dict:
+    image_encoder = getattr(pipe, "image_encoder", None)
+    encoder_name = type(image_encoder).__name__ if image_encoder is not None else None
+    processors = getattr(getattr(pipe, "unet", None), "attn_processors", None) or {}
+    ip_processors = sorted(
+        {type(processor).__name__ for processor in processors.values() if "IPAdapter" in type(processor).__name__}
+    )
+    print(f"IP-Adapter image encoder: {encoder_name or '(missing)'}")
+    print(f"IP-Adapter attention processors: {ip_processors or '(none)'}")
+    if image_encoder is None:
+        raise RuntimeError("Hard fail: IP-Adapter has no image encoder. Refusing text-only fallback.")
+    if not ip_processors:
+        raise RuntimeError("Hard fail: UNet has no IP-Adapter attention processors. Refusing text-only fallback.")
+    return {
+        "image_encoder": f"{type(image_encoder).__module__}.{encoder_name}",
+        "attention_processors": ip_processors,
+        "processor_slots": sum(1 for processor in processors.values() if "IPAdapter" in type(processor).__name__),
+    }
+
+
+def load_ip_adapter_or_fail(
+    pipe,
+    repo_id: str,
+    *,
+    subfolder: str,
+    weight_name: str,
+) -> dict:
+    if not hasattr(pipe, "load_ip_adapter"):
+        raise RuntimeError("Hard fail: this pipeline cannot load IP-Adapter.")
+    print(f"requested IP-Adapter: {repo_id}/{subfolder}/{weight_name}")
+    try:
+        pipe.load_ip_adapter(repo_id, subfolder=subfolder, weight_name=weight_name)
+    except Exception as exc:
+        raise RuntimeError(f"Hard fail: IP-Adapter {repo_id!r} ({weight_name}) failed to load: {exc}") from exc
+    info = inspect_ip_adapter(pipe)
+    info["repo"] = repo_id
+    info["subfolder"] = subfolder
+    info["weight_name"] = weight_name
+    return info
