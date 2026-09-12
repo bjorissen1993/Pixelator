@@ -20,7 +20,8 @@
     "isolatedSubject": false
   },
   "generation": {
-    "enabled": false
+    "enabled": false,
+    "backgroundMode": "solid"
   },
   "validatorRules": []
 }

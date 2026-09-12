@@ -23,6 +23,8 @@ AssetType = Literal[
 ]
 
 CanonicalKind = str
+BackgroundMode = Literal["transparent", "solid", "scene"]
+IsolatedStatus = Literal["ok", "failed", "skipped"]
 
 ValidatorLayer = Literal["global", "asset_type", "project", "asset"]
 ReviewReasonLayer = Literal["global", "asset_type", "asset"]
@@ -53,6 +55,7 @@ class GenerationSpec(BaseModel):
     guidance: float = 7.5
     prompt: str = ""
     negativePrompt: str = ""
+    backgroundMode: BackgroundMode | None = None
 
 
 class StyleProfile(BaseModel):
@@ -142,6 +145,12 @@ class GenerationCandidate(BaseModel):
     direction: str | None = None
     seed: int
     path: str
+    rawPath: str = ""
+    previewPath: str = ""
+    isolatedPath: str = ""
+    backgroundMode: BackgroundMode | None = None
+    isolatedStatus: IsolatedStatus = "skipped"
+    isolatedReasons: list[str] = Field(default_factory=list)
     createdAt: str
     status: str = "pending"
     sha256: str = ""
@@ -186,6 +195,7 @@ class AssetLabSession(BaseModel):
     notes: list[str] = Field(default_factory=list)
     learning: dict[str, Any] | None = None
     batchSize: int = 4
+    backgroundMode: BackgroundMode | None = None
 
 
 class AssetLabGenerateRequest(BaseModel):

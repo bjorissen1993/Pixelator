@@ -31,7 +31,12 @@ from models.canonical_base import CanonicalBaseCandidate, CanonicalBaseSession
 from persistence.projects import (
     accepted_canonical_path,
     accepted_dir,
+    accepted_isolated_path,
+    accepted_preview_path,
     candidate_dir,
+    candidate_isolated_path,
+    candidate_preview_path,
+    candidate_raw_path,
     ensure_asset_dirs,
     rejected_dir,
     seed_project_placeholders,
@@ -40,8 +45,11 @@ from persistence.projects import (
 from learning.policy import ALLOWED_BATCH_SIZES, parse_batch_size
 from learning.recipes import plan_candidate_recipes
 from learning.store import load_controls
+from processing.isolation import describe_isolation, isolate_subject
+from processing.output_mode import background_mode_for, expects_isolated_output
 from processing.validators import validate_candidate
 from processing.validators.review_reasons import reasons_for_asset, resolve_manual_reasons
+from processing.validators.transparent_output import isolated_reason_messages, transparent_output_warnings
 from services.learning import snapshot_for, write_learning_record
 from services.legacy_review import migrate_legacy_review
 
@@ -120,6 +128,7 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         "This is not the production Studio generator.",
         "Current Studio / direction-set images are not used as identity.",
         "A later reference-conditioned pass unlocks only after one valid reference is accepted.",
+        "Review preview stays on a plain background. When the asset type requires transparent output, a separate isolated asset is derived after generation.",
     ]
     if asset.assetType == "character":
         notes.append("Direction generation stays locked until that later character pass exists.")
@@ -144,18 +153,77 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         directionGenerationUnlocked=False,
         usingCurrentDirectionSet=False,
         notes=notes,
+        backgroundMode=background_mode_for(asset),
     )
+
+
+def _resolve_raw_path(asset: AssetProfile, item: GenerationCandidate) -> Path:
+    by_id = candidate_raw_path(asset.projectId, asset.assetType, asset.assetId, item.id)
+    listed = [config.DATA_DIR / item.rawPath] if item.rawPath else []
+    listed.append(by_id)
+    if item.path:
+        listed.append(config.DATA_DIR / item.path)
+    for path in listed:
+        if path.is_file() and path.name != "canonical.png":
+            return path
+    for path in listed:
+        if path.is_file():
+            return path
+    return by_id
+
+
+def _apply_output_artifacts(asset: AssetProfile, item: GenerationCandidate, raw_file: Path) -> GenerationCandidate:
+    from PIL import Image
+
+    mode = background_mode_for(asset)
+    item.backgroundMode = mode
+    item.rawPath = _public_path(raw_file)
+    item.path = _public_path(raw_file)
+
+    preview_file = candidate_preview_path(asset.projectId, asset.assetType, asset.assetId, item.id)
+    preview_file.parent.mkdir(parents=True, exist_ok=True)
+    if not preview_file.is_file():
+        Image.open(raw_file).convert("RGBA").save(preview_file)
+    item.previewPath = _public_path(preview_file)
+
+    if not expects_isolated_output(asset):
+        item.isolatedStatus = "skipped"
+        item.isolatedReasons = []
+        item.isolatedPath = ""
+        return item
+
+    isolated_file = candidate_isolated_path(asset.projectId, asset.assetType, asset.assetId, item.id)
+    isolated_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_image = Image.open(raw_file)
+    if isolated_file.is_file():
+        isolated = Image.open(isolated_file)
+        report = describe_isolation(isolated, raw_image)
+    else:
+        isolated, report = isolate_subject(raw_image)
+        isolated.save(isolated_file)
+    warnings = transparent_output_warnings(isolated, report)
+    item.isolatedPath = _public_path(isolated_file)
+    item.isolatedReasons = isolated_reason_messages(warnings)
+    if report.busy_background and "Isolated output: background could not be isolated" not in item.isolatedReasons:
+        item.isolatedReasons.append("Isolated output: background could not be isolated")
+    item.isolatedStatus = "ok" if not item.isolatedReasons else "failed"
+
+    accepted_preview = accepted_preview_path(asset.projectId, asset.assetType, asset.assetId)
+    accepted_isolated = accepted_isolated_path(asset.projectId, asset.assetType, asset.assetId)
+    if item.status == "accepted" and accepted_preview.is_file():
+        item.previewPath = _public_path(accepted_preview)
+    if item.status == "accepted" and accepted_isolated.is_file():
+        item.isolatedPath = _public_path(accepted_isolated)
+    return item
 
 
 def _refresh_candidate(asset: AssetProfile, item: GenerationCandidate) -> GenerationCandidate:
     from PIL import Image
 
     style = get_style(asset.projectId)
-    source = config.DATA_DIR / item.path
-    accepted = accepted_canonical_path(asset.projectId, asset.assetType, asset.assetId)
-    if item.status == "accepted":
-        source = accepted if accepted.is_file() else source
+    source = _resolve_raw_path(asset, item)
     if not source.is_file():
+        item.backgroundMode = background_mode_for(asset)
         return item
     validation, reasons, _busy = validate_candidate(Image.open(source), asset, style)
     item.validation = validation
@@ -170,7 +238,7 @@ def _refresh_candidate(asset: AssetProfile, item: GenerationCandidate) -> Genera
     item.prompt = item.prompt or asset.generation.prompt
     item.negativePrompt = item.negativePrompt or asset.generation.negativePrompt
     item.modelId = item.modelId or asset.generation.modelId
-    return item
+    return _apply_output_artifacts(asset, item, source)
 
 
 def _legacy_to_candidate(asset: AssetProfile, item: CanonicalBaseCandidate) -> GenerationCandidate:
@@ -233,10 +301,12 @@ def load_session(
     session.direction = asset.direction
     session.reviewChecklist = list(asset.reviewChecklist)
     session.reviewReasons = reasons_for_asset(asset)
+    session.backgroundMode = background_mode_for(asset)
     session.modelId = asset.generation.modelId or session.modelId
     session.prompt = asset.generation.prompt or session.prompt
     session.negativePrompt = asset.generation.negativePrompt or session.negativePrompt
     session.generationEnabled = asset.generation.enabled
+    session.notes = empty.notes
     session.candidates = [_refresh_candidate(asset, item) for item in session.candidates]
     if session.accepted:
         session.accepted = _refresh_candidate(asset, session.accepted)
@@ -245,6 +315,7 @@ def load_session(
     else:
         _apply_followup_locks(session, asset, False)
     session.learning = snapshot_for(asset, session.batchSize).model_dump()
+    save_session(session)
     return session
 
 
@@ -335,40 +406,38 @@ def generate_candidates(
         ).images[0]
         image.save(dest)
         validation, reasons, _busy = validate_candidate(Image.open(dest), asset, style)
-        session.candidates.insert(
-            0,
-            GenerationCandidate(
-                id=candidate_id,
-                projectId=asset.projectId,
-                assetType=asset.assetType,
-                assetId=asset.assetId,
-                state=asset.state,
-                direction=asset.direction,
-                seed=seed,
-                path=_public_path(dest),
-                createdAt=_now(),
-                status="pending",
-                sha256=sha256_file(dest),
-                rejectReasons=reasons,
-                valid=not reasons,
-                validation=validation,
-                prompt=recipe.prompt,
-                negativePrompt=recipe.negativePrompt,
-                modelId=loaded_id or spec.modelId,
-                modelSettings={
-                    "width": recipe.width,
-                    "height": recipe.height,
-                    "steps": recipe.steps,
-                    "guidance": recipe.guidance,
-                    "referenceStrength": recipe.referenceStrength,
-                    "referenceStrategy": recipe.referenceStrategy,
-                },
-                recipeFingerprint=recipe.fingerprint,
-                recipeMode=recipe.mode,
-                learnedAdjustments=[item.model_dump() for item in recipe.adjustments],
-                recipeWhy=recipe.why,
-            ),
+        candidate = GenerationCandidate(
+            id=candidate_id,
+            projectId=asset.projectId,
+            assetType=asset.assetType,
+            assetId=asset.assetId,
+            state=asset.state,
+            direction=asset.direction,
+            seed=seed,
+            path=_public_path(dest),
+            createdAt=_now(),
+            status="pending",
+            sha256=sha256_file(dest),
+            rejectReasons=reasons,
+            valid=not reasons,
+            validation=validation,
+            prompt=recipe.prompt,
+            negativePrompt=recipe.negativePrompt,
+            modelId=loaded_id or spec.modelId,
+            modelSettings={
+                "width": recipe.width,
+                "height": recipe.height,
+                "steps": recipe.steps,
+                "guidance": recipe.guidance,
+                "referenceStrength": recipe.referenceStrength,
+                "referenceStrategy": recipe.referenceStrategy,
+            },
+            recipeFingerprint=recipe.fingerprint,
+            recipeMode=recipe.mode,
+            learnedAdjustments=[item.model_dump() for item in recipe.adjustments],
+            recipeWhy=recipe.why,
         )
+        session.candidates.insert(0, _apply_output_artifacts(asset, candidate, dest))
     session.batchSize = count
     session.learning = snapshot_for(asset, count).model_dump()
     save_session(session)
@@ -442,14 +511,25 @@ def accept_candidate(
         raise KeyError(f"Unknown candidate {candidate_id}")
     if chosen.rejectReasons or not chosen.valid:
         raise ValueError("Hard fail: this candidate failed validation.")
-    source = config.DATA_DIR / chosen.path
+    source = _resolve_raw_path(asset, chosen)
     if not source.is_file():
         raise FileNotFoundError(f"Candidate image missing: {source}")
-    dest = accepted_canonical_path(project_id, asset_type, asset_id)
+    _apply_output_artifacts(asset, chosen, source)
     accepted_dir(project_id, asset_type, asset_id).mkdir(parents=True, exist_ok=True)
-    Image.open(source).save(dest)
+    preview_source = config.DATA_DIR / chosen.previewPath if chosen.previewPath else source
+    if not preview_source.is_file():
+        preview_source = source
+    Image.open(preview_source).save(accepted_canonical_path(project_id, asset_type, asset_id))
+    Image.open(preview_source).save(accepted_preview_path(project_id, asset_type, asset_id))
+    if chosen.isolatedPath:
+        isolated_source = config.DATA_DIR / chosen.isolatedPath
+        if isolated_source.is_file():
+            Image.open(isolated_source).save(accepted_isolated_path(project_id, asset_type, asset_id))
+            chosen.isolatedPath = _public_path(accepted_isolated_path(project_id, asset_type, asset_id))
     chosen.status = "accepted"
-    chosen.path = _public_path(dest)
+    chosen.path = _public_path(source)
+    chosen.rawPath = _public_path(source)
+    chosen.previewPath = _public_path(accepted_preview_path(project_id, asset_type, asset_id))
     for item in session.candidates:
         if item.id != chosen.id and item.status == "accepted":
             item.status = "rejected"
@@ -474,7 +554,7 @@ def reject_candidate(
     chosen = next((item for item in session.candidates if item.id == candidate_id), None)
     if chosen is None:
         raise KeyError(f"Unknown candidate {candidate_id}")
-    source = config.DATA_DIR / chosen.path
+    source = _resolve_raw_path(asset, chosen)
     dest_dir = rejected_dir(project_id, asset_type, asset_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
     if source.is_file():
@@ -483,9 +563,13 @@ def reject_candidate(
             shutil.copy2(source, target)
     if session.accepted and session.accepted.id == candidate_id:
         session.accepted = None
-        accepted = accepted_canonical_path(project_id, asset_type, asset_id)
-        if accepted.exists():
-            accepted.unlink()
+        for extra in (
+            accepted_canonical_path(project_id, asset_type, asset_id),
+            accepted_preview_path(project_id, asset_type, asset_id),
+            accepted_isolated_path(project_id, asset_type, asset_id),
+        ):
+            if extra.exists():
+                extra.unlink()
     body = payload or AssetLabRejectRequest()
     manual = resolve_manual_reasons(asset, body.reasonIds, body.note)
     if (

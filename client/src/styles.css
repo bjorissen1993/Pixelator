@@ -487,18 +487,31 @@ button.compass-cell { width: 100%; font: inherit; }
 .canonical-card.rejected { opacity: 0.62; }
 .canonical-card header { display: flex; justify-content: space-between; gap: 8px; }
 .canonical-card h3 { margin: 0; font-size: 15px; }
+.canonical-previews { display: grid; gap: 8px; }
+.canonical-previews.has-isolated { grid-template-columns: 1fr 1fr; }
+.canonical-preview-frame { margin: 0; display: grid; gap: 6px; }
+.canonical-preview-frame figcaption { color: #7d8a72; font-size: 11px; }
 .canonical-stage {
-  min-height: 240px;
+  min-height: 180px;
   display: grid;
   place-items: center;
   border-radius: 14px;
+  background: #121a15;
+}
+.canonical-stage.is-checkerboard {
   background:
-    linear-gradient(45deg, #1a221c 25%, transparent 25%) 0 0 / 16px 16px,
-    linear-gradient(45deg, transparent 75%, #1a221c 75%) 0 0 / 16px 16px,
-    #121a15;
+    linear-gradient(45deg, #d7ddd4 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, #d7ddd4 25%, transparent 25%) 0 8px / 16px 16px,
+    linear-gradient(45deg, transparent 75%, #d7ddd4 75%) 8px -8px / 16px 16px,
+    linear-gradient(-45deg, transparent 75%, #d7ddd4 75%) -8px 0 / 16px 16px,
+    #8f988c;
 }
 .canonical-preview { width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; }
-.canonical-accepted { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center; }
+.isolation-badge { justify-self: start; text-transform: none; letter-spacing: 0.02em; }
+.status-badge.status-ok { background: #24351f; color: #c8ea83; }
+.status-badge.status-failed { background: #3a1f1f; color: #ffb4b4; }
+.status-badge.status-skipped { background: #161b16; color: #6f7a6c; }
+.canonical-accepted { display: grid; grid-template-columns: minmax(240px, 1fr) 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) {
-  .canonical-grid, .canonical-accepted, .asset-lab-selectors, .learning-stats, .learning-evidence { grid-template-columns: 1fr; }
+  .canonical-grid, .canonical-accepted, .canonical-previews.has-isolated, .asset-lab-selectors, .learning-stats, .learning-evidence { grid-template-columns: 1fr; }
 }

@@ -1,11 +1,73 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AssetLabSession, AssetType, CatalogSummary, LearningSnapshot } from "@shared";
+import type { AssetLabSession, AssetType, CatalogSummary, GenerationCandidate, IsolatedStatus, LearningSnapshot } from "@shared";
 import { api } from "../api";
 import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button } from "./ui";
 
 const DEFAULT_BATCH_SIZES = [4, 8, 12, 20] as const;
+
+function isolationBadgeLabel(status?: IsolatedStatus) {
+  if (status === "ok") return "Transparent asset: extracted";
+  if (status === "failed") return "Transparent asset: failed";
+  return "Transparent asset: not required";
+}
+
+function CandidateOutputPreviews({
+  candidate,
+  name,
+}: {
+  candidate: GenerationCandidate;
+  name: string;
+}) {
+  const preview = candidate.previewPath || candidate.path;
+  const isolated = candidate.isolatedPath;
+  const wantsTransparent = candidate.backgroundMode === "transparent";
+  return (
+    <>
+      <div className={`canonical-previews ${wantsTransparent ? "has-isolated" : ""}`}>
+        <figure className="canonical-preview-frame">
+          <figcaption>Review preview</figcaption>
+          <div className="canonical-stage">
+            <img
+              alt={`${name} review preview ${candidate.seed}`}
+              className="canonical-preview"
+              src={assetUrl(preview, candidate.createdAt)}
+            />
+          </div>
+        </figure>
+        {wantsTransparent ? (
+          <figure className="canonical-preview-frame">
+            <figcaption>Transparent asset</figcaption>
+            <div className="canonical-stage is-checkerboard">
+              {isolated ? (
+                <img
+                  alt={`${name} transparent asset ${candidate.seed}`}
+                  className="canonical-preview"
+                  src={assetUrl(isolated, candidate.createdAt)}
+                />
+              ) : (
+                <p className="hint">Not extracted</p>
+              )}
+            </div>
+          </figure>
+        ) : null}
+      </div>
+      {wantsTransparent ? (
+        <span className={`status-badge isolation-badge status-${candidate.isolatedStatus ?? "skipped"}`}>
+          {isolationBadgeLabel(candidate.isolatedStatus)}
+        </span>
+      ) : null}
+      {wantsTransparent && candidate.isolatedReasons?.length ? (
+        <ul className="quality-warnings">
+          {candidate.isolatedReasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
 
 function allocateBatch(count: number, exploitRatio: number) {
   if (count <= 0) {
@@ -241,7 +303,7 @@ export function AssetLabScreen() {
         )}
         <p className="sprite-meta">
           Model {sessionMatches && session?.modelId ? session.modelId : canGenerate ? "configured" : "not implemented"} · isolated Asset Lab
-          {canGenerate ? " · raw 512×512 · no crop / resize / background removal" : ""}
+          {canGenerate ? " · raw 512×512 · no crop / resize on the raw file · isolated transparent derivative when required" : ""}
         </p>
         {sessionMatches && !canGenerate ? (
           <p className="hint">Generation for this asset type is not implemented yet. Architecture and validators are in place.</p>
@@ -438,11 +500,7 @@ export function AssetLabScreen() {
         </div>
         {sessionMatches && session?.accepted ? (
           <div className="canonical-accepted">
-            <img
-              alt={`Accepted ${session.assetName} reference`}
-              className="canonical-preview"
-              src={assetUrl(session.accepted.path, session.accepted.createdAt)}
-            />
+            <CandidateOutputPreviews candidate={session.accepted} name={session.assetName} />
             <div>
               <p>Accepted seed {session.accepted.seed}. This is the only allowed later identity/reference source for this asset.</p>
               <p className="hint">
@@ -475,13 +533,7 @@ export function AssetLabScreen() {
                   {candidate.recipeMode ? ` · ${candidate.recipeMode}` : ""}
                 </span>
               </header>
-              <div className="canonical-stage">
-                <img
-                  alt={`${session?.assetName ?? "Asset"} candidate ${candidate.seed}`}
-                  className="canonical-preview"
-                  src={assetUrl(candidate.path, candidate.createdAt)}
-                />
-              </div>
+              <CandidateOutputPreviews candidate={candidate} name={session?.assetName ?? "Asset"} />
               {candidate.rejectReasons.length ? (
                 <ul className="quality-warnings invalid-base">
                   {candidate.rejectReasons.map((reason) => (

@@ -80,6 +80,7 @@ BERWYNN_ASSET = AssetProfile(
             "legs, boots, armor, helmet, shoulder pads, weapon, staff, portrait, cropped, "
             "multiple characters, spritesheet, busy background, realistic, 3d, text"
         ),
+        backgroundMode="transparent",
     ),
     validatorRules=[
         ValidatorRule(
@@ -119,6 +120,7 @@ STUB_ASSETS = [
         canonicalLabel="Isolated default item sprite",
         reviewChecklist=["Isolated subject", "Readable at small size", "Plain background"],
         flags=AssetFlags(oneSubject=True, isolatedSubject=True, plainBackground=True),
+        generation=GenerationSpec(backgroundMode="transparent"),
     ),
     AssetProfile(
         projectId="chimera",
@@ -128,6 +130,7 @@ STUB_ASSETS = [
         canonicalKind="tile_base",
         canonicalLabel="Base tile / material reference",
         reviewChecklist=["Seamless edges", "Repeatable", "Style-consistent material"],
+        generation=GenerationSpec(backgroundMode="solid"),
     ),
 ]
 

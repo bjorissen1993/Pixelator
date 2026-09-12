@@ -462,6 +462,9 @@ export type AssetType =
   | "ui"
   | "vfx";
 
+export type BackgroundMode = "transparent" | "solid" | "scene";
+export type IsolatedStatus = "ok" | "failed" | "skipped";
+
 export interface ProjectProfile {
   id: string;
   name: string;
@@ -573,6 +576,12 @@ export interface GenerationCandidate {
   direction?: string | null;
   seed: number;
   path: string;
+  rawPath?: string;
+  previewPath?: string;
+  isolatedPath?: string;
+  backgroundMode?: BackgroundMode | null;
+  isolatedStatus?: IsolatedStatus;
+  isolatedReasons?: string[];
   createdAt: string;
   status: "pending" | "accepted" | "rejected" | string;
   sha256: string;
@@ -615,6 +624,7 @@ export interface AssetLabSession {
   notes: string[];
   learning?: LearningSnapshot | null;
   batchSize?: number;
+  backgroundMode?: BackgroundMode | null;
 }
 
 export type CanonicalBaseCandidate = GenerationCandidate;

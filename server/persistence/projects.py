@@ -10,7 +10,13 @@ Runtime layout (gitignored under data/):
       asset.json
       session.json
       candidates/
+        <id>.png              raw candidate (never overwritten)
+        <id>.preview.png      review preview
+        <id>.isolated.png     derived transparent asset, when required
       accepted/
+        preview.png
+        isolated.png
+        canonical.png         preview copy for older readers
       rejected/
       references/
       learning/
@@ -75,6 +81,26 @@ def session_path(project_id: str, asset_type: AssetType, asset_id: str) -> Path:
 
 def accepted_canonical_path(project_id: str, asset_type: AssetType, asset_id: str) -> Path:
     return accepted_dir(project_id, asset_type, asset_id) / "canonical.png"
+
+
+def accepted_preview_path(project_id: str, asset_type: AssetType, asset_id: str) -> Path:
+    return accepted_dir(project_id, asset_type, asset_id) / "preview.png"
+
+
+def accepted_isolated_path(project_id: str, asset_type: AssetType, asset_id: str) -> Path:
+    return accepted_dir(project_id, asset_type, asset_id) / "isolated.png"
+
+
+def candidate_raw_path(project_id: str, asset_type: AssetType, asset_id: str, candidate_id: str) -> Path:
+    return candidate_dir(project_id, asset_type, asset_id) / f"{candidate_id}.png"
+
+
+def candidate_preview_path(project_id: str, asset_type: AssetType, asset_id: str, candidate_id: str) -> Path:
+    return candidate_dir(project_id, asset_type, asset_id) / f"{candidate_id}.preview.png"
+
+
+def candidate_isolated_path(project_id: str, asset_type: AssetType, asset_id: str, candidate_id: str) -> Path:
+    return candidate_dir(project_id, asset_type, asset_id) / f"{candidate_id}.isolated.png"
 
 
 def ensure_asset_dirs(project: ProjectProfile, style: StyleProfile | None, asset: AssetProfile) -> Path:
