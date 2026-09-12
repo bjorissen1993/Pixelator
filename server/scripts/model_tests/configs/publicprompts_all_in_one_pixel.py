@@ -6,14 +6,15 @@ Not Pixelator's production South-base engine. Manual inspection required.
 
 MODEL_ID = "PublicPrompts/All-In-One-Pixel-Model"
 LORA = ""
-OUTPUT_NAME = "publicprompts_all_in_one_pixel"
+OUTPUT_NAME = "publicprompts_all_in_one_pixel_run2"
+OUTPUT_FILENAME_TEMPLATE = "publicprompts_seed{seed}.png"
 REQUIRE_CUDA = True
 ALLOW_SDXL = False
 WIDTH = 512
 HEIGHT = 512
 STEPS = 30
 GUIDANCE = 7.5
-SEEDS = (12345, 22345, 32345, 42345)
+SEEDS = (51721, 68403, 79117, 93641)
 
 PROMPT = (
     "pixelsprite, full body elderly male spirit, front facing, grey hair, thick grey beard, "

@@ -114,6 +114,7 @@ def main() -> int:
     prompt = cfg_get(preset, "PROMPT")
     prompts = {"A": prompt} if prompt else dict(cfg_get(preset, "PROMPTS") or test_config.PROMPTS)
     output_name = (args.output_name or cfg_get(preset, "OUTPUT_NAME") or "").strip() or slugify_model_id(model_id)
+    filename_template = (cfg_get(preset, "OUTPUT_FILENAME_TEMPLATE") or "").strip()
     out_dir = output_dir_for(output_name)
     metadata_path = out_dir / "metadata.json"
 
@@ -186,6 +187,8 @@ def main() -> int:
             "allow_sdxl": bool(allow_sdxl),
             "ip_adapter": False,
             "controlnet": False,
+            "output_directory": str(out_dir),
+            "filename_template": filename_template or None,
             "runs": [],
         }
 
@@ -249,14 +252,18 @@ def main() -> int:
 
         print(f"run_id: {metadata['run_id']}")
         for label, text, seed, strength in jobs:
-            filename = f"{label}_seed{seed}.png" if (strength is not None or label.startswith("strength")) else f"{label}_{seed}.png"
+            if filename_template:
+                filename = filename_template.format(seed=seed, label=label)
+            else:
+                filename = f"{label}_seed{seed}.png" if (strength is not None or label.startswith("strength")) else f"{label}_{seed}.png"
             path = out_dir / filename
             extra = {}
             print(f"--- {filename} ---")
-            print("GENERATING NEW IMAGE FROM MODEL")
-            print(f"model id: {loaded_id}")
-            print(f"generation seed: {seed}")
+            print(f"exact model id: {loaded_id}")
+            print(f"seed: {seed}")
+            print(f"prompt: {text}")
             print(f"output path: {path}")
+            print("GENERATING FRESH IMAGE")
             if path.exists():
                 print("OVERWRITING EXISTING OUTPUT")
             if strength is not None and lora_loader != "peft_unet":
