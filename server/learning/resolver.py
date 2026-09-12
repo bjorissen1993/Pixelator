@@ -108,6 +108,7 @@ def resolve_learning(
     records: list[LearningRecord],
     controls: LearningControls | None = None,
     policy: LearningPolicy | None = None,
+    batch_size: int | None = None,
 ) -> LearningSnapshot:
     context = LearningContext(
         projectId=asset.projectId,
@@ -137,7 +138,7 @@ def resolve_learning(
     why = [item.explanation for item in next_recipe.adjustments if item.applied and item.explanation]
     if not why:
         why = ["Using the asset's required generation spec. Learning has not crossed the apply threshold yet."]
-    batch = max(1, int(policy.previewBatchSize))
+    batch = max(1, int(batch_size if batch_size is not None else policy.previewBatchSize))
     allocated_exploit, allocated_explore = allocate_batch(batch, policy.exploitRatio)
     requested_exploit = unit_interval(policy.exploitRatio)
     requested_explore = round(1 - requested_exploit, 3)

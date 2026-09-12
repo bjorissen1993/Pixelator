@@ -43,11 +43,12 @@ def write_learning_record(record: LearningRecord) -> LearningRecord:
     return record
 
 
-def snapshot_for(asset: AssetProfile) -> LearningSnapshot:
+def snapshot_for(asset: AssetProfile, batch_size: int | None = None) -> LearningSnapshot:
     return resolve_learning(
         asset,
         load_records(),
         load_controls(asset.projectId, asset.assetType, asset.assetId),
+        batch_size=batch_size,
     )
 
 

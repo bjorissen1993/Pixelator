@@ -490,6 +490,7 @@ export interface CatalogSummary {
   defaultProjectId: string;
   defaultAssetType: AssetType;
   defaultAssetId: string;
+  allowedBatchSizes?: number[];
 }
 
 export interface RecipeAdjustment {
@@ -600,6 +601,7 @@ export interface AssetLabSession {
   usingCurrentDirectionSet: boolean;
   notes: string[];
   learning?: LearningSnapshot | null;
+  batchSize?: number;
 }
 
 export type CanonicalBaseCandidate = GenerationCandidate;

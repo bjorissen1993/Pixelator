@@ -5,6 +5,17 @@ import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button } from "./ui";
 
+const DEFAULT_BATCH_SIZES = [4, 8, 12, 20] as const;
+
+function allocateBatch(count: number, exploitRatio: number) {
+  if (count <= 0) {
+    return { exploit: 0, explore: 0 };
+  }
+  const ratio = Math.max(0, Math.min(1, exploitRatio));
+  const exploit = Math.min(count, Math.max(0, Math.floor(count * ratio + 0.5)));
+  return { exploit, explore: count - exploit };
+}
+
 export function AssetLabScreen() {
   const { run, busy } = useWorkspace();
   const [catalog, setCatalog] = useState<CatalogSummary | null>(null);
@@ -12,14 +23,17 @@ export function AssetLabScreen() {
   const [assetType, setAssetType] = useState<AssetType>("character");
   const [assetId, setAssetId] = useState("");
   const [session, setSession] = useState<AssetLabSession | null>(null);
+  const [batchSize, setBatchSize] = useState(4);
 
   const assetsForType = useMemo(
     () => (catalog?.assets ?? []).filter((item) => item.projectId === projectId && item.assetType === assetType),
     [catalog, projectId, assetType],
   );
 
-  const refresh = (nextProject = projectId, nextType = assetType, nextAsset = assetId) =>
-    api.assetLabSession(nextProject, nextType, nextAsset).then(setSession);
+  const allowedBatchSizes = catalog?.allowedBatchSizes?.length ? catalog.allowedBatchSizes : [...DEFAULT_BATCH_SIZES];
+
+  const refresh = (nextProject = projectId, nextType = assetType, nextAsset = assetId, nextBatch = batchSize) =>
+    api.assetLabSession(nextProject, nextType, nextAsset, nextBatch).then(setSession);
 
   useEffect(() => {
     void api
@@ -29,7 +43,7 @@ export function AssetLabScreen() {
         setProjectId(summary.defaultProjectId);
         setAssetType(summary.defaultAssetType);
         setAssetId(summary.defaultAssetId);
-        return api.assetLabSession(summary.defaultProjectId, summary.defaultAssetType, summary.defaultAssetId);
+        return api.assetLabSession(summary.defaultProjectId, summary.defaultAssetType, summary.defaultAssetId, 4);
       })
       .then(setSession)
       .catch(() => undefined);
@@ -75,6 +89,9 @@ export function AssetLabScreen() {
   const checklist = sessionMatches ? session?.reviewChecklist ?? [] : [];
   const canGenerate = sessionMatches && !!session?.generationEnabled;
   const learning = sessionMatches ? session?.learning ?? null : null;
+  const requestedExploit = learning?.requestedExploitRatio ?? learning?.exploitRatio ?? 0.8;
+  const requestedExplore = learning?.requestedExploreRatio ?? learning?.exploreRatio ?? 0.2;
+  const allocation = allocateBatch(batchSize, requestedExploit);
 
   const applyLearning = (next: LearningSnapshot) => {
     setSession((current) => (current ? { ...current, learning: next } : current));
@@ -92,20 +109,40 @@ export function AssetLabScreen() {
               generation is unchanged.
             </p>
           </div>
-          <div className="chip-row">
+          <div className="chip-row asset-lab-generate">
+            <label className="field asset-lab-batch">
+              <span>Batch</span>
+              <select
+                value={batchSize}
+                disabled={!!busy}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setBatchSize(next);
+                  if (projectId && assetType && assetId) {
+                    void refresh(projectId, assetType, assetId, next).catch(() => undefined);
+                  }
+                }}
+              >
+                {allowedBatchSizes.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Button
               disabled={!!busy || !canGenerate}
               onClick={() =>
                 run(
-                  "Creating asset-lab candidates",
+                  `Creating ${batchSize} asset-lab candidates`,
                   async () => {
-                    setSession(await api.generateAssetLab(projectId, assetType, assetId, 4));
+                    setSession(await api.generateAssetLab(projectId, assetType, assetId, batchSize));
                   },
                   { generating: false },
                 )
               }
             >
-              Generate 4 candidates
+              Generate {batchSize} candidates
             </Button>
           </div>
         </div>
@@ -202,12 +239,9 @@ export function AssetLabScreen() {
           </div>
         </div>
         <p className="sprite-meta">
-          Requested {Math.round((learning?.requestedExploitRatio ?? learning?.exploitRatio ?? 0.8) * 100)}%
-          {" "}exploit / {Math.round((learning?.requestedExploreRatio ?? learning?.exploreRatio ?? 0.2) * 100)}%
-          {" "}explore. Allocated for a batch of {learning?.allocationBatchSize ?? 4}:{" "}
-          {learning?.allocatedExploit ?? 3} exploit / {learning?.allocatedExplore ?? 1} explore (
-          {Math.round((learning?.allocatedExploitRatio ?? 0.75) * 100)}% /{" "}
-          {Math.round((learning?.allocatedExploreRatio ?? 0.25) * 100)}%).
+          Requested {Math.round(requestedExploit * 100)}% exploit / {Math.round(requestedExplore * 100)}% explore.
+          Allocated for a batch of {batchSize}: {allocation.exploit} exploit / {allocation.explore} explore (
+          {Math.round((allocation.exploit / batchSize) * 100)}% / {Math.round((allocation.explore / batchSize) * 100)}%).
         </p>
         {learning?.stats.topRejectionReasons.length ? (
           <ul className="canonical-checklist">

@@ -8,6 +8,19 @@ import config
 from models.learning import LearningPolicy
 
 DEFAULT_POLICY = LearningPolicy()
+ALLOWED_BATCH_SIZES = (4, 8, 12, 20)
+DEFAULT_BATCH_SIZE = 4
+
+
+def parse_batch_size(value: int | None) -> int:
+    """Asset Lab generation accepts only the configured discrete batch sizes."""
+    if value is None:
+        return DEFAULT_BATCH_SIZE
+    size = int(value)
+    if size not in ALLOWED_BATCH_SIZES:
+        allowed = ", ".join(str(item) for item in ALLOWED_BATCH_SIZES)
+        raise ValueError(f"batchSize must be one of {allowed}.")
+    return size
 
 
 def policy_path() -> Path:

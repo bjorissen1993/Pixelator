@@ -416,6 +416,9 @@ button.compass-cell { width: 100%; font: inherit; }
   .studio-side { position: static; }
 }
 
+.asset-lab-generate { align-items: end; }
+.asset-lab-batch { width: auto; min-width: 72px; }
+.asset-lab-batch select { width: auto; min-width: 72px; padding: 10px 12px; }
 .asset-lab-selectors {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

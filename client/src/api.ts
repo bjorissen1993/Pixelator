@@ -192,14 +192,16 @@ export const api = {
   memorySuggestions: (characterId?: string) =>
     request<MemorySuggestions>(`/api/memory/suggestions${characterId ? `?characterId=${characterId}` : ""}`),
   assetLabCatalog: () => request<CatalogSummary>("/api/tests/asset-lab/catalog"),
-  assetLabSession: (projectId: string, assetType: AssetType, assetId: string) =>
+  assetLabSession: (projectId: string, assetType: AssetType, assetId: string, batchSize?: number) =>
     request<AssetLabSession>(
-      `/api/tests/asset-lab?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+      `/api/tests/asset-lab?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}${
+        batchSize ? `&batchSize=${batchSize}` : ""
+      }`,
     ),
-  generateAssetLab: (projectId: string, assetType: AssetType, assetId: string, count = 4) =>
+  generateAssetLab: (projectId: string, assetType: AssetType, assetId: string, batchSize = 4) =>
     request<AssetLabSession>("/api/tests/asset-lab/generate", {
       method: "POST",
-      body: JSON.stringify({ projectId, assetType, assetId, count }),
+      body: JSON.stringify({ projectId, assetType, assetId, batchSize }),
     }),
   acceptAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
     request<AssetLabSession>(

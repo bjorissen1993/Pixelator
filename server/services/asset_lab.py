@@ -35,6 +35,7 @@ from persistence.projects import (
     seed_project_placeholders,
     session_path,
 )
+from learning.policy import ALLOWED_BATCH_SIZES, parse_batch_size
 from learning.recipes import plan_candidate_recipes
 from learning.store import load_controls
 from processing.validators import validate_candidate
@@ -86,6 +87,7 @@ def catalog() -> CatalogSummary:
         defaultProjectId=default_project,
         defaultAssetType=default_type,
         defaultAssetId=default_id,
+        allowedBatchSizes=list(ALLOWED_BATCH_SIZES),
     )
 
 
@@ -237,7 +239,7 @@ def load_session(
         _apply_followup_locks(session, asset, unlocked)
     else:
         _apply_followup_locks(session, asset, False)
-    session.learning = snapshot_for(asset).model_dump()
+    session.learning = snapshot_for(asset, session.batchSize).model_dump()
     return session
 
 
@@ -290,8 +292,8 @@ def generate_candidates(
     if not asset.generation.enabled:
         raise ValueError(f"Generation is not enabled for {asset.projectId}/{asset.assetType}/{asset.assetId}.")
     spec = asset.generation
-    count = max(1, min(4, int(count)))
-    snapshot = snapshot_for(asset)
+    count = parse_batch_size(count)
+    snapshot = snapshot_for(asset, count)
     recipes = plan_candidate_recipes(
         asset,
         snapshot.recommendations,
@@ -362,7 +364,8 @@ def generate_candidates(
                 recipeWhy=recipe.why,
             ),
         )
-    session.learning = snapshot_for(asset).model_dump()
+    session.batchSize = count
+    session.learning = snapshot_for(asset, count).model_dump()
     save_session(session)
     return session
 
@@ -439,7 +442,7 @@ def accept_candidate(
     session.accepted = chosen
     _apply_followup_locks(session, asset, True)
     _record_decision(asset, chosen, "accepted")
-    session.learning = snapshot_for(asset).model_dump()
+    session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)
     return session
 
@@ -471,6 +474,6 @@ def reject_candidate(
             accepted.unlink()
     _apply_followup_locks(session, asset, False)
     _record_decision(asset, chosen, "rejected")
-    session.learning = snapshot_for(asset).model_dump()
+    session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)
     return session

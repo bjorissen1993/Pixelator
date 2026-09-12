@@ -12,8 +12,9 @@ if str(SERVER_DIR) not in sys.path:
 
 from domain.catalog import get_asset
 from learning.context import LearningContext, record_matches
-from learning.policy import DEFAULT_POLICY, confidence_for
+from learning.policy import ALLOWED_BATCH_SIZES, DEFAULT_POLICY, confidence_for, parse_batch_size
 from learning.recipes import allocate_batch, build_next_recipe, plan_candidate_recipes
+from models.catalog import AssetLabGenerateRequest
 from learning.resolver import apply_controls, resolve_learning
 from learning.scoring import recipe_fingerprint, recipe_score, score_recipes
 from learning.signals import collect_signals, tokens_from_reason
@@ -307,7 +308,9 @@ class LearningLoopTests(unittest.TestCase):
     def test_batch_allocation_reports_requested_vs_actual(self):
         self.assertEqual(allocate_batch(4, 0.8), (3, 1))
         self.assertEqual(allocate_batch(5, 0.8), (4, 1))
+        self.assertEqual(allocate_batch(8, 0.8), (6, 2))
         self.assertEqual(allocate_batch(10, 0.8), (8, 2))
+        self.assertEqual(allocate_batch(12, 0.8), (10, 2))
         self.assertEqual(allocate_batch(20, 0.8), (16, 4))
         self.assertEqual(allocate_batch(0, 0.8), (0, 0))
         snapshot = resolve_learning(get_asset("chimera", "character", "berwynn"), [])
@@ -319,6 +322,31 @@ class LearningLoopTests(unittest.TestCase):
         self.assertEqual(snapshot.allocatedExplore, 1)
         self.assertAlmostEqual(snapshot.allocatedExploitRatio, 0.75)
         self.assertAlmostEqual(snapshot.allocatedExploreRatio, 0.25)
+        for size, exploit, explore in ((8, 6, 2), (12, 10, 2), (20, 16, 4)):
+            sized = resolve_learning(get_asset("chimera", "character", "berwynn"), [], batch_size=size)
+            self.assertEqual(sized.allocationBatchSize, size)
+            self.assertEqual(sized.allocatedExploit, exploit)
+            self.assertEqual(sized.allocatedExplore, explore)
+            self.assertAlmostEqual(sized.requestedExploitRatio, 0.8)
+            self.assertAlmostEqual(sized.requestedExploreRatio, 0.2)
+
+    def test_asset_lab_batch_size_is_validated(self):
+        self.assertEqual(tuple(ALLOWED_BATCH_SIZES), (4, 8, 12, 20))
+        self.assertEqual(parse_batch_size(None), 4)
+        for size in ALLOWED_BATCH_SIZES:
+            self.assertEqual(parse_batch_size(size), size)
+        with self.assertRaises(ValueError):
+            parse_batch_size(5)
+        with self.assertRaises(ValueError):
+            parse_batch_size(16)
+        self.assertEqual(AssetLabGenerateRequest(batchSize=12).resolved_batch_size(), 12)
+        self.assertEqual(AssetLabGenerateRequest(count=8).resolved_batch_size(), 8)
+        self.assertEqual(AssetLabGenerateRequest().resolved_batch_size(), 4)
+        with self.assertRaises(ValueError):
+            AssetLabGenerateRequest(batchSize=3).resolved_batch_size()
+        planned = plan_candidate_recipes(get_asset("chimera", "character", "berwynn"), [], DEFAULT_POLICY, 12)
+        self.assertEqual(len(planned), 12)
+        self.assertEqual([item.mode for item in planned], ["exploit"] * 10 + ["explore"] * 2)
 
     def test_score_recipes_groups_by_fingerprint(self):
         records = [

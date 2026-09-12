@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from domain.catalog import get_asset
+from learning.policy import parse_batch_size
 from models.catalog import AssetLabGenerateRequest, AssetType
 from models.learning import LearningControlRequest
 from services import asset_lab as asset_lab_service
@@ -23,10 +24,17 @@ def get_session(
     projectId: str | None = None,
     assetType: AssetType | None = None,
     assetId: str | None = None,
+    batchSize: int | None = None,
 ):
     try:
         project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
-        return asset_lab_service.load_session(project_id, asset_type, asset_id)
+        session = asset_lab_service.load_session(project_id, asset_type, asset_id)
+        if batchSize is not None:
+            session.batchSize = parse_batch_size(batchSize)
+            session.learning = learning_service.snapshot_for(
+                get_asset(project_id, asset_type, asset_id), session.batchSize
+            ).model_dump()
+        return session
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_session"})
 
@@ -38,7 +46,9 @@ def generate(payload: AssetLabGenerateRequest | None = None):
         project_id, asset_type, asset_id = asset_lab_service.resolve_selection(
             body.projectId, body.assetType, body.assetId
         )
-        return asset_lab_service.generate_candidates(project_id, asset_type, asset_id, body.count)
+        return asset_lab_service.generate_candidates(
+            project_id, asset_type, asset_id, body.resolved_batch_size()
+        )
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_generate"})
 
@@ -76,10 +86,12 @@ def get_learning(
     projectId: str | None = None,
     assetType: AssetType | None = None,
     assetId: str | None = None,
+    batchSize: int | None = None,
 ):
     try:
         project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
-        return learning_service.snapshot_for(get_asset(project_id, asset_type, asset_id))
+        size = parse_batch_size(batchSize) if batchSize is not None else None
+        return learning_service.snapshot_for(get_asset(project_id, asset_type, asset_id), size)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_learning"})
 

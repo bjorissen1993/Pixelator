@@ -167,13 +167,20 @@ class AssetLabSession(BaseModel):
     usingCurrentDirectionSet: bool = False
     notes: list[str] = Field(default_factory=list)
     learning: dict[str, Any] | None = None
+    batchSize: int = 4
 
 
 class AssetLabGenerateRequest(BaseModel):
     projectId: str | None = None
     assetType: AssetType | None = None
     assetId: str | None = None
-    count: int = 4
+    batchSize: int | None = None
+    count: int | None = None
+
+    def resolved_batch_size(self) -> int:
+        from learning.policy import parse_batch_size
+
+        return parse_batch_size(self.batchSize if self.batchSize is not None else self.count)
 
 
 class CatalogSummary(BaseModel):
@@ -182,3 +189,4 @@ class CatalogSummary(BaseModel):
     defaultProjectId: str
     defaultAssetType: AssetType
     defaultAssetId: str
+    allowedBatchSizes: list[int] = Field(default_factory=lambda: [4, 8, 12, 20])
