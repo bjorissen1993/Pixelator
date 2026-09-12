@@ -14,6 +14,7 @@ CHIMERA_PROJECT = ProjectProfile(
     styleProfileId="chimera-default",
     defaultAssetType="character",
     defaultAssetId="berwynn",
+    isDefault=True,
 )
 
 CHIMERA_STYLE = StyleProfile(
@@ -114,34 +115,13 @@ STUB_ASSETS = [
 ]
 
 
-def all_projects() -> list[ProjectProfile]:
+def builtin_projects() -> list[ProjectProfile]:
     return [CHIMERA_PROJECT]
 
 
-def all_styles() -> list[StyleProfile]:
+def builtin_styles() -> list[StyleProfile]:
     return [CHIMERA_STYLE]
 
 
-def all_assets() -> list[AssetProfile]:
+def builtin_assets() -> list[AssetProfile]:
     return [BERWYNN_ASSET, *STUB_ASSETS]
-
-
-def get_project(project_id: str) -> ProjectProfile:
-    for item in all_projects():
-        if item.id == project_id:
-            return item
-    raise KeyError(f"Unknown project {project_id}")
-
-
-def get_style(project_id: str) -> StyleProfile | None:
-    for item in all_styles():
-        if item.projectId == project_id:
-            return item
-    return None
-
-
-def get_asset(project_id: str, asset_type: str, asset_id: str) -> AssetProfile:
-    for item in all_assets():
-        if item.projectId == project_id and item.assetType == asset_type and item.assetId == asset_id:
-            return item
-    raise KeyError(f"Unknown asset {project_id}/{asset_type}/{asset_id}")

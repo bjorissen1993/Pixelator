@@ -1,0 +1,11 @@
+{
+  "projectId": "another-game",
+  "name": "Another Game default",
+  "outline": "",
+  "shading": "",
+  "detail": "",
+  "notes": [
+    "Project style rules stay here. They must not become global or Chimera rules."
+  ],
+  "validatorRules": []
+}

@@ -5,16 +5,12 @@ import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { Button } from "./ui";
 
-const DEFAULT_PROJECT = "chimera";
-const DEFAULT_TYPE: AssetType = "character";
-const DEFAULT_ASSET = "berwynn";
-
 export function AssetLabScreen() {
   const { run, busy } = useWorkspace();
   const [catalog, setCatalog] = useState<CatalogSummary | null>(null);
-  const [projectId, setProjectId] = useState(DEFAULT_PROJECT);
-  const [assetType, setAssetType] = useState<AssetType>(DEFAULT_TYPE);
-  const [assetId, setAssetId] = useState(DEFAULT_ASSET);
+  const [projectId, setProjectId] = useState("");
+  const [assetType, setAssetType] = useState<AssetType>("character");
+  const [assetId, setAssetId] = useState("");
   const [session, setSession] = useState<AssetLabSession | null>(null);
 
   const assetsForType = useMemo(
@@ -38,6 +34,24 @@ export function AssetLabScreen() {
       .then(setSession)
       .catch(() => undefined);
   }, []);
+
+  const selectProject = (next: string) => {
+    const project = catalog?.projects.find((item) => item.id === next);
+    const first = (catalog?.assets ?? []).find((item) => item.projectId === next);
+    const nextType = (project?.defaultAssetType || first?.assetType || "character") as AssetType;
+    const nextAsset =
+      (project?.defaultAssetId &&
+      (catalog?.assets ?? []).some((item) => item.projectId === next && item.assetId === project.defaultAssetId)
+        ? project.defaultAssetId
+        : first?.assetId) ?? "";
+    setProjectId(next);
+    setAssetType(nextType);
+    setAssetId(nextAsset);
+    setSession(null);
+    if (nextAsset) {
+      void refresh(next, nextType, nextAsset).catch(() => undefined);
+    }
+  };
 
   const selectType = (next: AssetType) => {
     const first = (catalog?.assets ?? []).find((item) => item.projectId === projectId && item.assetType === next);
@@ -93,8 +107,12 @@ export function AssetLabScreen() {
         <div className="asset-lab-selectors">
           <label className="field">
             <span>Project</span>
-            <select value={projectId} disabled>
-              {(catalog?.projects ?? [{ id: DEFAULT_PROJECT, name: "Chimera" }]).map((item) => (
+            <select
+              value={projectId}
+              disabled={(catalog?.projects.length ?? 0) <= 1}
+              onChange={(event) => selectProject(event.target.value)}
+            >
+              {(catalog?.projects ?? []).map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>

@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from models.catalog import AssetLabSession
+from models.catalog import AssetLabSession, AssetType
 from persistence.projects import LEGACY_BERWYNN_REVIEW
 from services import asset_lab as asset_lab_service
+from services.legacy_review import VERTICAL_SLICE
 
-DEFAULT_PROJECT = asset_lab_service.DEFAULT_PROJECT
-DEFAULT_ASSET_TYPE = asset_lab_service.DEFAULT_ASSET_TYPE
-DEFAULT_ASSET_ID = asset_lab_service.DEFAULT_ASSET_ID
+DEFAULT_PROJECT = VERTICAL_SLICE[0]
+DEFAULT_ASSET_TYPE: AssetType = VERTICAL_SLICE[1]
+DEFAULT_ASSET_ID = VERTICAL_SLICE[2]
 
 
 def accepted_canonical_path() -> Path:

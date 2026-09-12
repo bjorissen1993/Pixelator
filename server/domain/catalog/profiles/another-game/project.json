@@ -1,0 +1,9 @@
+{
+  "id": "another-game",
+  "name": "Another Game",
+  "description": "Second project used to prove the catalog is not Chimera-only.",
+  "styleProfileId": "another-game-default",
+  "defaultAssetType": "vfx",
+  "defaultAssetId": "fireball-impact",
+  "isDefault": false
+}

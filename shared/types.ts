@@ -467,8 +467,9 @@ export interface ProjectProfile {
   name: string;
   description: string;
   styleProfileId: string;
-  defaultAssetType: AssetType;
+  defaultAssetType?: AssetType | null;
   defaultAssetId: string;
+  isDefault?: boolean;
 }
 
 export interface AssetProfileSummary {

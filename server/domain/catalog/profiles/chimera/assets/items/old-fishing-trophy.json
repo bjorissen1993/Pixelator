@@ -1,0 +1,26 @@
+{
+  "projectId": "chimera",
+  "assetType": "item",
+  "assetId": "old-fishing-trophy",
+  "name": "Old Fishing Trophy",
+  "canonicalKind": "item_default",
+  "canonicalLabel": "Isolated default item sprite",
+  "state": null,
+  "direction": null,
+  "reviewChecklist": [
+    "Isolated subject",
+    "Readable at small size",
+    "Plain background"
+  ],
+  "flags": {
+    "oneSubject": true,
+    "fullBody": false,
+    "plainBackground": true,
+    "spiritForm": false,
+    "isolatedSubject": true
+  },
+  "generation": {
+    "enabled": false
+  },
+  "validatorRules": []
+}

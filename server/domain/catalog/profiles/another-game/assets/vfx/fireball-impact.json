@@ -1,0 +1,26 @@
+{
+  "projectId": "another-game",
+  "assetType": "vfx",
+  "assetId": "fireball-impact",
+  "name": "Fireball Impact",
+  "canonicalKind": "vfx_keyframe",
+  "canonicalLabel": "Representative effect keyframe",
+  "state": "impact",
+  "direction": null,
+  "reviewChecklist": [
+    "Readable burst silhouette",
+    "Matches the project VFX language",
+    "Useful as a later animation keyframe"
+  ],
+  "flags": {
+    "oneSubject": true,
+    "fullBody": false,
+    "plainBackground": true,
+    "spiritForm": false,
+    "isolatedSubject": true
+  },
+  "generation": {
+    "enabled": false
+  },
+  "validatorRules": []
+}

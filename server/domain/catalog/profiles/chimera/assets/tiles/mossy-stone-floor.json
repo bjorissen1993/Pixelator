@@ -1,0 +1,26 @@
+{
+  "projectId": "chimera",
+  "assetType": "tile",
+  "assetId": "mossy-stone-floor",
+  "name": "Mossy Stone Floor",
+  "canonicalKind": "tile_base",
+  "canonicalLabel": "Base tile / material reference",
+  "state": null,
+  "direction": null,
+  "reviewChecklist": [
+    "Seamless edges",
+    "Repeatable",
+    "Edge-compatible with adjacent tiles"
+  ],
+  "flags": {
+    "oneSubject": false,
+    "fullBody": false,
+    "plainBackground": false,
+    "spiritForm": false,
+    "isolatedSubject": false
+  },
+  "generation": {
+    "enabled": false
+  },
+  "validatorRules": []
+}

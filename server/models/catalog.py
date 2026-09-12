@@ -22,16 +22,7 @@ AssetType = Literal[
     "vfx",
 ]
 
-CanonicalKind = Literal[
-    "character_idle_front",
-    "portrait_neutral",
-    "item_default",
-    "prop_static",
-    "tile_base",
-    "background_primary",
-    "ui_default",
-    "vfx_keyframe",
-]
+CanonicalKind = str
 
 ValidatorLayer = Literal["global", "asset_type", "project", "asset"]
 
@@ -71,8 +62,9 @@ class ProjectProfile(BaseModel):
     name: str
     description: str = ""
     styleProfileId: str = ""
-    defaultAssetType: AssetType = "character"
+    defaultAssetType: AssetType | None = None
     defaultAssetId: str = ""
+    isDefault: bool = False
 
 
 class AssetFlags(BaseModel):
@@ -167,9 +159,9 @@ class AssetLabSession(BaseModel):
 
 
 class AssetLabGenerateRequest(BaseModel):
-    projectId: str = "chimera"
-    assetType: AssetType = "character"
-    assetId: str = "berwynn"
+    projectId: str | None = None
+    assetType: AssetType | None = None
+    assetId: str | None = None
     count: int = 4
 
 

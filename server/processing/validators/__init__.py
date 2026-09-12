@@ -46,7 +46,7 @@ def reject_reasons(
     for warning in [*validation.warnings, *extra]:
         message = (
             asset_reject_message(asset, warning.code)
-            or type_reject_message(warning.code)
+            or type_reject_message(asset, warning.code)
             or GLOBAL_MESSAGES.get(warning.code)
         )
         if message and message not in reasons:

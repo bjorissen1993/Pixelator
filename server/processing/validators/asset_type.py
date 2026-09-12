@@ -22,8 +22,6 @@ FULL_BODY_CODES = {
     "likely_closeup",
     "likely_non_full_body",
     "missing_lower_body",
-    "lower_spirit_body_missing",
-    "missing_spirit_tail",
     "silhouette_incomplete",
 }
 SUBJECT_CODES = {
@@ -46,7 +44,7 @@ def character_validation(image: Image.Image, asset: AssetProfile) -> QualityVali
         expected_size=image.size[0],
         palette_limit=512,
         spirit_form=asset.flags.spiritForm,
-        for_base=True,
+        for_base=asset.flags.fullBody,
         one_character=asset.flags.oneSubject,
         source=image,
     )
@@ -86,5 +84,12 @@ def type_warnings(image: Image.Image, asset: AssetProfile) -> tuple[QualityValid
     return None, []
 
 
-def type_reject_message(code: str) -> str | None:
+def type_reject_message(asset: AssetProfile, code: str) -> str | None:
+    if code in CROP_CODES or code in FULL_BODY_CODES:
+        if asset.assetType != "character" or not asset.flags.fullBody:
+            return None
+    if code in SUBJECT_CODES and not asset.flags.oneSubject:
+        return None
+    if code == "busy_background" and not asset.flags.plainBackground:
+        return None
     return TYPE_MESSAGES.get(code)

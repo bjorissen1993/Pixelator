@@ -17,12 +17,13 @@ def get_catalog():
 
 @router.get("/api/tests/asset-lab")
 def get_session(
-    projectId: str = asset_lab_service.DEFAULT_PROJECT,
-    assetType: AssetType = asset_lab_service.DEFAULT_ASSET_TYPE,
-    assetId: str = asset_lab_service.DEFAULT_ASSET_ID,
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
 ):
     try:
-        return asset_lab_service.load_session(projectId, assetType, assetId)
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return asset_lab_service.load_session(project_id, asset_type, asset_id)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_session"})
 
@@ -31,9 +32,10 @@ def get_session(
 def generate(payload: AssetLabGenerateRequest | None = None):
     try:
         body = payload or AssetLabGenerateRequest()
-        return asset_lab_service.generate_candidates(
-            body.projectId, body.assetType, body.assetId, body.count
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(
+            body.projectId, body.assetType, body.assetId
         )
+        return asset_lab_service.generate_candidates(project_id, asset_type, asset_id, body.count)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_generate"})
 
@@ -41,12 +43,13 @@ def generate(payload: AssetLabGenerateRequest | None = None):
 @router.post("/api/tests/asset-lab/accept/{candidate_id}")
 def accept(
     candidate_id: str,
-    projectId: str = asset_lab_service.DEFAULT_PROJECT,
-    assetType: AssetType = asset_lab_service.DEFAULT_ASSET_TYPE,
-    assetId: str = asset_lab_service.DEFAULT_ASSET_ID,
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
 ):
     try:
-        return asset_lab_service.accept_candidate(candidate_id, projectId, assetType, assetId)
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return asset_lab_service.accept_candidate(candidate_id, project_id, asset_type, asset_id)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_accept", "candidateId": candidate_id})
 
@@ -54,11 +57,12 @@ def accept(
 @router.post("/api/tests/asset-lab/reject/{candidate_id}")
 def reject(
     candidate_id: str,
-    projectId: str = asset_lab_service.DEFAULT_PROJECT,
-    assetType: AssetType = asset_lab_service.DEFAULT_ASSET_TYPE,
-    assetId: str = asset_lab_service.DEFAULT_ASSET_ID,
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
 ):
     try:
-        return asset_lab_service.reject_candidate(candidate_id, projectId, assetType, assetId)
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return asset_lab_service.reject_candidate(candidate_id, project_id, asset_type, asset_id)
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_reject", "candidateId": candidate_id})

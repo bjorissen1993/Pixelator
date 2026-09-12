@@ -1,7 +1,7 @@
 """Isolated Asset Lab: generic canonical-reference review.
 
 Not the production Studio generator. Generation is only enabled when an asset
-profile has an isolated generation spec. Berwynn is the default vertical slice.
+profile has an isolated generation spec.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import config
-from domain.catalog import all_assets, all_projects, get_asset, get_project, get_style
+from domain.catalog import all_assets, all_projects, default_selection, get_asset, get_project, get_style
 from models.catalog import (
     AssetLabSession,
     AssetProfile,
@@ -27,7 +27,6 @@ from models.catalog import (
 )
 from models.canonical_base import CanonicalBaseCandidate, CanonicalBaseSession
 from persistence.projects import (
-    LEGACY_BERWYNN_REVIEW,
     accepted_canonical_path,
     accepted_dir,
     candidate_dir,
@@ -38,6 +37,7 @@ from persistence.projects import (
 )
 from processing.validators import validate_candidate
 from services.learning import write_learning_record
+from services.legacy_review import migrate_legacy_review
 
 MODEL_TESTS_DIR = Path(__file__).resolve().parents[1] / "scripts" / "model_tests"
 if str(MODEL_TESTS_DIR) not in sys.path:
@@ -49,10 +49,6 @@ from helpers import (  # noqa: E402
     load_text2image_pipeline,
     sha256_file,
 )
-
-DEFAULT_PROJECT = "chimera"
-DEFAULT_ASSET_TYPE: AssetType = "character"
-DEFAULT_ASSET_ID = "berwynn"
 
 _pipe_lock = threading.Lock()
 _pipes: dict[str, object] = {}
@@ -67,15 +63,27 @@ def _public_path(path: Path) -> str:
     return path.resolve().relative_to(config.DATA_DIR.resolve()).as_posix()
 
 
+def resolve_selection(
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
+) -> tuple[str, AssetType, str]:
+    if project_id and asset_type and asset_id:
+        return project_id, asset_type, asset_id
+    default_project, default_type, default_id = default_selection()
+    return project_id or default_project, asset_type or default_type, asset_id or default_id
+
+
 def catalog() -> CatalogSummary:
     _seed_known_projects()
-    projects = all_projects()
+    projects = sorted(all_projects(), key=lambda item: (not item.isDefault, item.name.lower()))
+    default_project, default_type, default_id = default_selection()
     return CatalogSummary(
         projects=projects,
         assets=all_assets(),
-        defaultProjectId=DEFAULT_PROJECT,
-        defaultAssetType=DEFAULT_ASSET_TYPE,
-        defaultAssetId=DEFAULT_ASSET_ID,
+        defaultProjectId=default_project,
+        defaultAssetType=default_type,
+        defaultAssetId=default_id,
     )
 
 
@@ -94,7 +102,7 @@ def _context(project_id: str, asset_type: AssetType, asset_id: str) -> tuple[Ass
     asset = get_asset(project_id, asset_type, asset_id)
     seed_project_placeholders(project_id)
     ensure_asset_dirs(project, style, asset)
-    _migrate_legacy_berwynn(asset)
+    migrate_legacy_review(asset, _empty_session, _legacy_to_candidate, _public_path)
     return asset, _empty_session(asset)
 
 
@@ -105,10 +113,11 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         "This is not the production Studio generator.",
         "Current Studio / direction-set images are not used as identity.",
         "A later reference-conditioned pass unlocks only after one valid reference is accepted.",
-        "Direction generation stays locked.",
     ]
+    if asset.assetType == "character":
+        notes.append("Direction generation stays locked until that later character pass exists.")
     if not asset.generation.enabled:
-        notes.append("Generation is not implemented for this asset type yet.")
+        notes.append("Generation is not enabled for this asset yet.")
     return AssetLabSession(
         projectId=asset.projectId,
         projectName=project.name,
@@ -178,49 +187,19 @@ def _legacy_to_candidate(asset: AssetProfile, item: CanonicalBaseCandidate) -> G
     )
 
 
-def _migrate_legacy_berwynn(asset: AssetProfile) -> None:
-    if asset.projectId != "chimera" or asset.assetType != "character" or asset.assetId != "berwynn":
-        return
-    dest_accepted = accepted_canonical_path(asset.projectId, asset.assetType, asset.assetId)
-    legacy_accepted = LEGACY_BERWYNN_REVIEW / "accepted" / "canonical.png"
-    if legacy_accepted.is_file() and not dest_accepted.is_file():
-        dest_accepted.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(legacy_accepted, dest_accepted)
-
-    dest_session = session_path(asset.projectId, asset.assetType, asset.assetId)
-    legacy_session = LEGACY_BERWYNN_REVIEW / "session.json"
-    if dest_session.is_file() or not legacy_session.is_file():
-        return
-    payload = json.loads(legacy_session.read_text(encoding="utf-8"))
-    old = CanonicalBaseSession.model_validate(payload)
-    session = _empty_session(asset)
-    copied: list[GenerationCandidate] = []
-    dest_candidates = candidate_dir(asset.projectId, asset.assetType, asset.assetId)
-    dest_candidates.mkdir(parents=True, exist_ok=True)
-    for item in old.candidates:
-        source = config.DATA_DIR / item.path
-        if source.is_file():
-            target = dest_candidates / source.name
-            if not target.is_file():
-                shutil.copy2(source, target)
-            item.path = _public_path(target)
-        copied.append(_legacy_to_candidate(asset, item))
-    session.candidates = copied
-    if old.accepted:
-        if dest_accepted.is_file():
-            old.accepted.path = _public_path(dest_accepted)
-        session.accepted = _legacy_to_candidate(asset, old.accepted)
-        session.accepted.status = "accepted"
-        session.referenceUnlocked = True
-        session.ipAdapterUnlocked = True
-    dest_session.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+def _apply_followup_locks(session: AssetLabSession, asset: AssetProfile, unlocked: bool) -> None:
+    session.referenceUnlocked = unlocked
+    session.ipAdapterUnlocked = unlocked and asset.assetType == "character"
+    session.directionGenerationUnlocked = False
+    session.usingCurrentDirectionSet = False
 
 
 def load_session(
-    project_id: str = DEFAULT_PROJECT,
-    asset_type: AssetType = DEFAULT_ASSET_TYPE,
-    asset_id: str = DEFAULT_ASSET_ID,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
 ) -> AssetLabSession:
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     asset, empty = _context(project_id, asset_type, asset_id)
     path = session_path(project_id, asset_type, asset_id)
     if not path.is_file():
@@ -253,10 +232,9 @@ def load_session(
     if session.accepted:
         session.accepted = _refresh_candidate(asset, session.accepted)
         unlocked = bool(session.accepted.valid and session.accepted.status == "accepted")
-        session.referenceUnlocked = unlocked
-        session.ipAdapterUnlocked = unlocked
-    session.directionGenerationUnlocked = False
-    session.usingCurrentDirectionSet = False
+        _apply_followup_locks(session, asset, unlocked)
+    else:
+        _apply_followup_locks(session, asset, False)
     return session
 
 
@@ -267,10 +245,11 @@ def save_session(session: AssetLabSession) -> None:
 
 
 def accepted_path(
-    project_id: str = DEFAULT_PROJECT,
-    asset_type: AssetType = DEFAULT_ASSET_TYPE,
-    asset_id: str = DEFAULT_ASSET_ID,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
 ) -> Path:
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     return accepted_canonical_path(project_id, asset_type, asset_id)
 
 
@@ -295,17 +274,18 @@ def _load_pipe(model_id: str, prompt: str, negative_prompt: str):
 
 
 def generate_candidates(
-    project_id: str = DEFAULT_PROJECT,
-    asset_type: AssetType = DEFAULT_ASSET_TYPE,
-    asset_id: str = DEFAULT_ASSET_ID,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
     count: int = 4,
 ) -> AssetLabSession:
     import torch
     from PIL import Image
 
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     asset = get_asset(project_id, asset_type, asset_id)
     if not asset.generation.enabled:
-        raise ValueError(f"Generation is not implemented for {asset.assetType} assets yet.")
+        raise ValueError(f"Generation is not enabled for {asset.projectId}/{asset.assetType}/{asset.assetId}.")
     spec = asset.generation
     count = max(1, min(4, int(count)))
     pipe, loaded_id = _load_pipe(spec.modelId, spec.prompt, spec.negativePrompt)
@@ -402,12 +382,13 @@ def _record_decision(
 
 def accept_candidate(
     candidate_id: str,
-    project_id: str = DEFAULT_PROJECT,
-    asset_type: AssetType = DEFAULT_ASSET_TYPE,
-    asset_id: str = DEFAULT_ASSET_ID,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
 ) -> AssetLabSession:
     from PIL import Image
 
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     asset = get_asset(project_id, asset_type, asset_id)
     session = load_session(project_id, asset_type, asset_id)
     chosen = next((item for item in session.candidates if item.id == candidate_id), None)
@@ -427,10 +408,7 @@ def accept_candidate(
         if item.id != chosen.id and item.status == "accepted":
             item.status = "rejected"
     session.accepted = chosen
-    session.referenceUnlocked = True
-    session.ipAdapterUnlocked = True
-    session.directionGenerationUnlocked = False
-    session.usingCurrentDirectionSet = False
+    _apply_followup_locks(session, asset, True)
     save_session(session)
     _record_decision(asset, chosen, "accepted")
     return session
@@ -438,10 +416,11 @@ def accept_candidate(
 
 def reject_candidate(
     candidate_id: str,
-    project_id: str = DEFAULT_PROJECT,
-    asset_type: AssetType = DEFAULT_ASSET_TYPE,
-    asset_id: str = DEFAULT_ASSET_ID,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
 ) -> AssetLabSession:
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     asset = get_asset(project_id, asset_type, asset_id)
     session = load_session(project_id, asset_type, asset_id)
     chosen = next((item for item in session.candidates if item.id == candidate_id), None)
@@ -457,12 +436,10 @@ def reject_candidate(
             shutil.copy2(source, target)
     if session.accepted and session.accepted.id == candidate_id:
         session.accepted = None
-        session.referenceUnlocked = False
-        session.ipAdapterUnlocked = False
         accepted = accepted_canonical_path(project_id, asset_type, asset_id)
         if accepted.exists():
             accepted.unlink()
-    session.directionGenerationUnlocked = False
+    _apply_followup_locks(session, asset, False)
     save_session(session)
     _record_decision(asset, chosen, "rejected")
     return session
