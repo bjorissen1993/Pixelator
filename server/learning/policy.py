@@ -38,7 +38,7 @@ def unit_interval(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def confidence_for(evidence: int, consistency: float, policy: LearningPolicy) -> tuple[float, bool, str]:
+def confidence_for(evidence: float, consistency: float, policy: LearningPolicy) -> tuple[float, bool, str]:
     """confidence = unit(band_scale) * unit(consistency). Always in [0, 1]."""
     consistency = unit_interval(consistency)
     if evidence < policy.minSuggest:

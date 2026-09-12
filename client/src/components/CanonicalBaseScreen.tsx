@@ -24,6 +24,10 @@ export function AssetLabScreen() {
   const [assetId, setAssetId] = useState("");
   const [session, setSession] = useState<AssetLabSession | null>(null);
   const [batchSize, setBatchSize] = useState(4);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReasonIds, setRejectReasonIds] = useState<string[]>([]);
+  const [rejectNote, setRejectNote] = useState("");
+  const [validatorFeedback, setValidatorFeedback] = useState<"" | "missed_issue" | "incorrect_detection">("");
 
   const assetsForType = useMemo(
     () => (catalog?.assets ?? []).filter((item) => item.projectId === projectId && item.assetType === assetType),
@@ -95,6 +99,37 @@ export function AssetLabScreen() {
 
   const applyLearning = (next: LearningSnapshot) => {
     setSession((current) => (current ? { ...current, learning: next } : current));
+  };
+
+  const reviewReasons = sessionMatches ? session?.reviewReasons ?? [] : [];
+
+  const openReject = (candidateId: string) => {
+    setRejectingId(candidateId);
+    setRejectReasonIds([]);
+    setRejectNote("");
+    setValidatorFeedback("");
+  };
+
+  const toggleRejectReason = (reasonId: string) => {
+    setRejectReasonIds((current) =>
+      current.includes(reasonId) ? current.filter((item) => item !== reasonId) : [...current, reasonId],
+    );
+  };
+
+  const confirmReject = (candidateId: string) => {
+    if (!rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback) {
+      return;
+    }
+    void run("Rejecting candidate", async () => {
+      setSession(
+        await api.rejectAssetLab(candidateId, projectId, assetType, assetId, {
+          reasonIds: rejectReasonIds,
+          note: rejectNote.trim(),
+          validatorFeedback: validatorFeedback || null,
+        }),
+      );
+      setRejectingId(null);
+    });
   };
 
   return (
@@ -243,15 +278,32 @@ export function AssetLabScreen() {
           Allocated for a batch of {batchSize}: {allocation.exploit} exploit / {allocation.explore} explore (
           {Math.round((allocation.exploit / batchSize) * 100)}% / {Math.round((allocation.explore / batchSize) * 100)}%).
         </p>
-        {learning?.stats.topRejectionReasons.length ? (
-          <ul className="canonical-checklist">
-            {learning.stats.topRejectionReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="hint">No rejection reasons recorded for this asset yet.</p>
-        )}
+        <div className="learning-evidence">
+          <div>
+            <h3>Automatic evidence</h3>
+            {(learning?.stats.topAutomaticReasons ?? []).length ? (
+              <ul className="canonical-checklist">
+                {(learning?.stats.topAutomaticReasons ?? []).map((reason) => (
+                  <li key={`auto-${reason}`}>{reason}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hint">No automatic validator rejections recorded yet.</p>
+            )}
+          </div>
+          <div>
+            <h3>Manual evidence</h3>
+            {(learning?.stats.topManualReasons ?? []).length ? (
+              <ul className="canonical-checklist">
+                {(learning?.stats.topManualReasons ?? []).map((reason) => (
+                  <li key={`manual-${reason}`}>{reason}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hint">No manual review rejections recorded yet.</p>
+            )}
+          </div>
+        </div>
         <div className="learning-adjustments">
           {(learning?.recommendations ?? []).map((item) => (
             <article className={`learning-adjustment ${item.disabled ? "is-disabled" : ""}`} key={item.id}>
@@ -439,29 +491,112 @@ export function AssetLabScreen() {
               ) : (
                 <p className="hint">Passed automatic checks. Confirm the checklist by eye before accept.</p>
               )}
-              <div className="chip-row">
-                <Button
-                  disabled={!!busy || !candidate.valid || candidate.status === "accepted"}
-                  onClick={() =>
-                    run("Accepting canonical reference", async () => {
-                      setSession(await api.acceptAssetLab(candidate.id, projectId, assetType, assetId));
-                    })
-                  }
-                >
-                  Accept
-                </Button>
-                <Button
-                  variant="danger"
-                  disabled={!!busy || candidate.status === "rejected"}
-                  onClick={() =>
-                    run("Rejecting candidate", async () => {
-                      setSession(await api.rejectAssetLab(candidate.id, projectId, assetType, assetId));
-                    })
-                  }
-                >
-                  Reject
-                </Button>
-              </div>
+              {candidate.manualRejectReasons?.length || candidate.manualNote || candidate.validatorFeedback ? (
+                <div className="manual-review-summary">
+                  {candidate.manualRejectReasons?.length ? (
+                    <ul className="canonical-checklist">
+                      {candidate.manualRejectReasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {candidate.manualNote ? <p className="hint">Note: {candidate.manualNote}</p> : null}
+                  {candidate.validatorFeedback === "missed_issue" ? (
+                    <p className="sprite-meta">False validator result: missed an issue</p>
+                  ) : null}
+                  {candidate.validatorFeedback === "incorrect_detection" ? (
+                    <p className="sprite-meta">False validator result: incorrectly detected an issue</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {rejectingId === candidate.id ? (
+                <div className="reject-panel">
+                  <p className="sprite-meta">Why reject this candidate?</p>
+                  <div className="reject-reasons">
+                    {reviewReasons.map((reason) => (
+                      <label className="reject-reason" key={reason.id}>
+                        <input
+                          type="checkbox"
+                          checked={rejectReasonIds.includes(reason.id)}
+                          onChange={() => toggleRejectReason(reason.id)}
+                        />
+                        <span>{reason.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <label className="field">
+                    <span>Note</span>
+                    <input
+                      value={rejectNote}
+                      maxLength={160}
+                      placeholder="Optional short note"
+                      onChange={(event) => setRejectNote(event.target.value)}
+                    />
+                  </label>
+                  <fieldset className="reject-feedback">
+                    <legend>False validator result</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`validator-feedback-${candidate.id}`}
+                        checked={validatorFeedback === ""}
+                        onChange={() => setValidatorFeedback("")}
+                      />
+                      <span>None</span>
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`validator-feedback-${candidate.id}`}
+                        checked={validatorFeedback === "missed_issue"}
+                        onChange={() => setValidatorFeedback("missed_issue")}
+                      />
+                      <span>Missed an issue</span>
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`validator-feedback-${candidate.id}`}
+                        checked={validatorFeedback === "incorrect_detection"}
+                        onChange={() => setValidatorFeedback("incorrect_detection")}
+                      />
+                      <span>Incorrectly detected an issue</span>
+                    </label>
+                  </fieldset>
+                  <div className="chip-row">
+                    <Button
+                      variant="danger"
+                      disabled={!!busy || (!rejectReasonIds.length && !rejectNote.trim() && !validatorFeedback)}
+                      onClick={() => confirmReject(candidate.id)}
+                    >
+                      Confirm reject
+                    </Button>
+                    <Button variant="ghost" disabled={!!busy} onClick={() => setRejectingId(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="chip-row">
+                  <Button
+                    disabled={!!busy || !candidate.valid || candidate.status === "accepted"}
+                    onClick={() =>
+                      run("Accepting canonical reference", async () => {
+                        setSession(await api.acceptAssetLab(candidate.id, projectId, assetType, assetId));
+                      })
+                    }
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={!!busy || candidate.status === "rejected"}
+                    onClick={() => openReject(candidate.id)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              )}
             </article>
           ))}
         </div>

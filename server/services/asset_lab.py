@@ -18,12 +18,14 @@ from uuid import uuid4
 import config
 from domain.catalog import all_assets, all_projects, default_selection, get_asset, get_project, get_style
 from models.catalog import (
+    AssetLabRejectRequest,
     AssetLabSession,
     AssetProfile,
     AssetType,
     CatalogSummary,
     GenerationCandidate,
     LearningRecord,
+    ValidatorFeedback,
 )
 from models.canonical_base import CanonicalBaseCandidate, CanonicalBaseSession
 from persistence.projects import (
@@ -39,6 +41,7 @@ from learning.policy import ALLOWED_BATCH_SIZES, parse_batch_size
 from learning.recipes import plan_candidate_recipes
 from learning.store import load_controls
 from processing.validators import validate_candidate
+from processing.validators.review_reasons import reasons_for_asset, resolve_manual_reasons
 from services.learning import snapshot_for, write_learning_record
 from services.legacy_review import migrate_legacy_review
 
@@ -133,6 +136,7 @@ def _empty_session(asset: AssetProfile) -> AssetLabSession:
         state=asset.state,
         direction=asset.direction,
         reviewChecklist=list(asset.reviewChecklist),
+        reviewReasons=reasons_for_asset(asset),
         modelId=asset.generation.modelId,
         prompt=asset.generation.prompt,
         negativePrompt=asset.generation.negativePrompt,
@@ -228,6 +232,7 @@ def load_session(
     session.state = asset.state
     session.direction = asset.direction
     session.reviewChecklist = list(asset.reviewChecklist)
+    session.reviewReasons = reasons_for_asset(asset)
     session.modelId = asset.generation.modelId or session.modelId
     session.prompt = asset.generation.prompt or session.prompt
     session.negativePrompt = asset.generation.negativePrompt or session.negativePrompt
@@ -375,7 +380,12 @@ def _record_decision(
     candidate: GenerationCandidate,
     decision: str,
     extra_reasons: list[str] | None = None,
+    manual_reasons: list[str] | None = None,
+    manual_note: str = "",
+    validator_feedback: ValidatorFeedback | None = None,
 ) -> None:
+    automatic = list(candidate.rejectReasons)
+    manual = list(manual_reasons or extra_reasons or [])
     write_learning_record(
         LearningRecord(
             id=f"{candidate.id}-{decision}-{uuid4().hex[:6]}",
@@ -400,7 +410,11 @@ def _record_decision(
             references=[],
             validationResults=candidate.validation.model_dump() if candidate.validation else {},
             decision=decision,  # type: ignore[arg-type]
-            rejectionReasons=list(extra_reasons or candidate.rejectReasons),
+            rejectionReasons=[*automatic, *manual],
+            automaticRejectionReasons=automatic,
+            manualRejectionReasons=manual,
+            manualNote=manual_note,
+            validatorFeedback=validator_feedback,
             candidatePath=candidate.path,
             sha256=candidate.sha256,
             recipeFingerprint=candidate.recipeFingerprint,
@@ -452,6 +466,7 @@ def reject_candidate(
     project_id: str | None = None,
     asset_type: AssetType | None = None,
     asset_id: str | None = None,
+    payload: AssetLabRejectRequest | None = None,
 ) -> AssetLabSession:
     project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
     asset = get_asset(project_id, asset_type, asset_id)
@@ -459,7 +474,6 @@ def reject_candidate(
     chosen = next((item for item in session.candidates if item.id == candidate_id), None)
     if chosen is None:
         raise KeyError(f"Unknown candidate {candidate_id}")
-    chosen.status = "rejected"
     source = config.DATA_DIR / chosen.path
     dest_dir = rejected_dir(project_id, asset_type, asset_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -472,8 +486,28 @@ def reject_candidate(
         accepted = accepted_canonical_path(project_id, asset_type, asset_id)
         if accepted.exists():
             accepted.unlink()
+    body = payload or AssetLabRejectRequest()
+    manual = resolve_manual_reasons(asset, body.reasonIds, body.note)
+    if (
+        payload is not None
+        and not manual
+        and not body.note.strip()
+        and not body.validatorFeedback
+    ):
+        raise ValueError("Choose at least one rejection reason, a short note, or a validator-feedback marker.")
+    chosen.status = "rejected"
+    chosen.manualRejectReasons = manual
+    chosen.manualNote = body.note.strip()
+    chosen.validatorFeedback = body.validatorFeedback
     _apply_followup_locks(session, asset, False)
-    _record_decision(asset, chosen, "rejected")
+    _record_decision(
+        asset,
+        chosen,
+        "rejected",
+        manual_reasons=manual,
+        manual_note=body.note.strip(),
+        validator_feedback=body.validatorFeedback,
+    )
     session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)
     return session

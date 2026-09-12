@@ -25,6 +25,8 @@ AssetType = Literal[
 CanonicalKind = str
 
 ValidatorLayer = Literal["global", "asset_type", "project", "asset"]
+ReviewReasonLayer = Literal["global", "asset_type", "asset"]
+ValidatorFeedback = Literal["missed_issue", "incorrect_detection"]
 
 
 class ValidatorRule(BaseModel):
@@ -33,6 +35,13 @@ class ValidatorRule(BaseModel):
     message: str
     enabled: bool = True
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewReason(BaseModel):
+    id: str
+    label: str
+    layer: ReviewReasonLayer = "global"
+    assetTypes: list[AssetType] = Field(default_factory=list)
 
 
 class GenerationSpec(BaseModel):
@@ -88,6 +97,7 @@ class AssetProfile(BaseModel):
     flags: AssetFlags = Field(default_factory=AssetFlags)
     generation: GenerationSpec = Field(default_factory=GenerationSpec)
     validatorRules: list[ValidatorRule] = Field(default_factory=list)
+    reviewReasons: list[ReviewReason] = Field(default_factory=list)
 
 
 class LearningRecord(BaseModel):
@@ -108,6 +118,10 @@ class LearningRecord(BaseModel):
     validationResults: dict[str, Any] = Field(default_factory=dict)
     decision: Literal["accepted", "rejected"]
     rejectionReasons: list[str] = Field(default_factory=list)
+    automaticRejectionReasons: list[str] = Field(default_factory=list)
+    manualRejectionReasons: list[str] = Field(default_factory=list)
+    manualNote: str = ""
+    validatorFeedback: ValidatorFeedback | None = None
     manualRating: int | None = None
     candidatePath: str = ""
     sha256: str = ""
@@ -132,6 +146,9 @@ class GenerationCandidate(BaseModel):
     status: str = "pending"
     sha256: str = ""
     rejectReasons: list[str] = Field(default_factory=list)
+    manualRejectReasons: list[str] = Field(default_factory=list)
+    manualNote: str = ""
+    validatorFeedback: ValidatorFeedback | None = None
     valid: bool = False
     validation: QualityValidation | None = None
     prompt: str = ""
@@ -155,6 +172,7 @@ class AssetLabSession(BaseModel):
     state: str | None = None
     direction: str | None = None
     reviewChecklist: list[str] = Field(default_factory=list)
+    reviewReasons: list[ReviewReason] = Field(default_factory=list)
     modelId: str
     prompt: str
     negativePrompt: str
@@ -181,6 +199,12 @@ class AssetLabGenerateRequest(BaseModel):
         from learning.policy import parse_batch_size
 
         return parse_batch_size(self.batchSize if self.batchSize is not None else self.count)
+
+
+class AssetLabRejectRequest(BaseModel):
+    reasonIds: list[str] = Field(default_factory=list)
+    note: str = ""
+    validatorFeedback: ValidatorFeedback | None = None
 
 
 class CatalogSummary(BaseModel):

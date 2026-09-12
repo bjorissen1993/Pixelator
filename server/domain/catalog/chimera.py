@@ -5,7 +5,15 @@ These are test/config data for the isolated Asset Lab, not production Studio sta
 
 from __future__ import annotations
 
-from models.catalog import AssetFlags, AssetProfile, GenerationSpec, ProjectProfile, StyleProfile, ValidatorRule
+from models.catalog import (
+    AssetFlags,
+    AssetProfile,
+    GenerationSpec,
+    ProjectProfile,
+    ReviewReason,
+    StyleProfile,
+    ValidatorRule,
+)
 
 CHIMERA_PROJECT = ProjectProfile(
     id="chimera",
@@ -89,6 +97,15 @@ BERWYNN_ASSET = AssetProfile(
             layer="asset",
             message="Rejected: spectral lower body / ghost tail is missing",
         ),
+    ],
+    reviewReasons=[
+        ReviewReason(id="visible_legs", label="visible legs", layer="asset"),
+        ReviewReason(
+            id="missing_spectral_tail",
+            label="missing spectral lower body / ghost tail",
+            layer="asset",
+        ),
+        ReviewReason(id="armor_shoulder", label="armor / shoulder armor", layer="asset"),
     ],
 )
 

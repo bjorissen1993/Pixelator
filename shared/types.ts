@@ -526,12 +526,21 @@ export interface GenerationRecipe {
   why: string[];
 }
 
+export interface ReviewReason {
+  id: string;
+  label: string;
+  layer: "global" | "asset_type" | "asset" | string;
+  assetTypes?: AssetType[];
+}
+
 export interface LearningStats {
   attempts: number;
   accepted: number;
   rejected: number;
   successRate: number;
   topRejectionReasons: string[];
+  topAutomaticReasons?: string[];
+  topManualReasons?: string[];
 }
 
 export interface LearningSnapshot {
@@ -568,6 +577,9 @@ export interface GenerationCandidate {
   status: "pending" | "accepted" | "rejected" | string;
   sha256: string;
   rejectReasons: string[];
+  manualRejectReasons?: string[];
+  manualNote?: string;
+  validatorFeedback?: "missed_issue" | "incorrect_detection" | null;
   valid: boolean;
   validation?: QualityValidation | null;
   prompt?: string;
@@ -589,6 +601,7 @@ export interface AssetLabSession {
   state?: string | null;
   direction?: string | null;
   reviewChecklist: string[];
+  reviewReasons?: ReviewReason[];
   modelId: string;
   prompt: string;
   negativePrompt: string;

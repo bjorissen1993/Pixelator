@@ -74,9 +74,14 @@ def _merge() -> tuple[list[ProjectProfile], list[StyleProfile], list[AssetProfil
     styles.update(_index_styles(builtin_styles()))
 
     # Assets: builtin → versioned JSON → runtime asset.json, so dropped files can add assets.
-    assets = {_asset_key(item): item for item in builtin_assets()}
-    assets.update({_asset_key(item): item for item in profile_assets})
-    assets.update({_asset_key(item): item for item in data_assets})
+    assets: dict[tuple[str, str, str], AssetProfile] = {}
+    for group in (builtin_assets(), profile_assets, data_assets):
+        for item in group:
+            key = _asset_key(item)
+            current = assets.get(key)
+            if current and not item.reviewReasons and current.reviewReasons:
+                item = item.model_copy(update={"reviewReasons": current.reviewReasons})
+            assets[key] = item
     return list(projects.values()), list(styles.values()), list(assets.values())
 
 

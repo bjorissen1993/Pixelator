@@ -208,10 +208,20 @@ export const api = {
       `/api/tests/asset-lab/accept/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
       { method: "POST", body: "{}" },
     ),
-  rejectAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
+  rejectAssetLab: (
+    candidateId: string,
+    projectId: string,
+    assetType: AssetType,
+    assetId: string,
+    body: {
+      reasonIds: string[];
+      note?: string;
+      validatorFeedback?: "missed_issue" | "incorrect_detection" | null;
+    },
+  ) =>
     request<AssetLabSession>(
       `/api/tests/asset-lab/reject/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
-      { method: "POST", body: "{}" },
+      { method: "POST", body: JSON.stringify(body) },
     ),
   assetLabLearning: (projectId: string, assetType: AssetType, assetId: string) =>
     request<LearningSnapshot>(

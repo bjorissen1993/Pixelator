@@ -8,7 +8,7 @@ from learning.context import LearningContext, record_matches
 from learning.policy import load_policy, unit_interval
 from learning.recipes import allocate_batch, build_next_recipe
 from learning.scoring import score_recipes
-from learning.signals import collect_signals
+from learning.signals import collect_signals, split_rejection_reasons
 
 __all__ = ["LearningContext", "apply_controls", "resolve_learning"]
 
@@ -90,16 +90,27 @@ def _stats(records: list[LearningRecord], context: LearningContext) -> LearningS
     rejected = sum(1 for item in scoped if item.decision == "rejected")
     attempts = accepted + rejected
     reasons: dict[str, int] = {}
+    automatic: dict[str, int] = {}
+    manual: dict[str, int] = {}
     for item in scoped:
-        for reason in item.rejectionReasons:
+        auto_reasons, manual_reasons = split_rejection_reasons(item)
+        for reason in auto_reasons:
+            automatic[reason] = automatic.get(reason, 0) + 1
+            reasons[reason] = reasons.get(reason, 0) + 1
+        for reason in manual_reasons:
+            manual[reason] = manual.get(reason, 0) + 1
             reasons[reason] = reasons.get(reason, 0) + 1
     top = [key for key, _value in sorted(reasons.items(), key=lambda pair: pair[1], reverse=True)[:5]]
+    top_auto = [key for key, _value in sorted(automatic.items(), key=lambda pair: pair[1], reverse=True)[:5]]
+    top_manual = [key for key, _value in sorted(manual.items(), key=lambda pair: pair[1], reverse=True)[:5]]
     return LearningStats(
         attempts=attempts,
         accepted=accepted,
         rejected=rejected,
         successRate=round(accepted / attempts, 3) if attempts else 0,
         topRejectionReasons=top,
+        topAutomaticReasons=top_auto,
+        topManualReasons=top_manual,
     )
 
 

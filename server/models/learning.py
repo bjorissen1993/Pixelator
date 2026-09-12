@@ -52,6 +52,8 @@ class LearningPolicy(BaseModel):
     scoreWeightRating: float = 0.15
     ratingScale: float = 5.0
     previewBatchSize: int = 4
+    manualEvidenceWeight: float = 1.0
+    automaticEvidenceWeight: float = 0.25
 
 
 class RecipeAdjustment(BaseModel):
@@ -63,7 +65,9 @@ class RecipeAdjustment(BaseModel):
     confidence: float
     accepted: int = 0
     rejected: int = 0
-    evidence: int = 0
+    evidence: float = 0
+    manualEvidence: float = 0
+    automaticEvidence: float = 0
     applied: bool = False
     disabled: bool = False
     pinned: bool = False
@@ -119,6 +123,8 @@ class LearningStats(BaseModel):
     rejected: int = 0
     successRate: float = 0
     topRejectionReasons: list[str] = Field(default_factory=list)
+    topAutomaticReasons: list[str] = Field(default_factory=list)
+    topManualReasons: list[str] = Field(default_factory=list)
 
 
 class LearningSnapshot(BaseModel):

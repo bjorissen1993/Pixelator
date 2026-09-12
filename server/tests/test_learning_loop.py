@@ -17,8 +17,9 @@ from learning.recipes import allocate_batch, build_next_recipe, plan_candidate_r
 from models.catalog import AssetLabGenerateRequest
 from learning.resolver import apply_controls, resolve_learning
 from learning.scoring import recipe_fingerprint, recipe_score, score_recipes
-from learning.signals import collect_signals, tokens_from_reason
+from learning.signals import collect_signals, split_rejection_reasons, tokens_from_reason
 from models.catalog import LearningRecord
+from processing.validators.review_reasons import reasons_for_asset, resolve_manual_reasons
 from models.learning import GenerationRecipe, LearningControls, LearningPolicy, RecipeAdjustment
 
 
@@ -40,7 +41,12 @@ def record(
     state: str | None = None,
     seed: int = 1,
     valid: bool = False,
+    automatic: list[str] | None = None,
+    manual: list[str] | None = None,
+    validator_feedback: str | None = None,
 ) -> LearningRecord:
+    automatic_reasons = automatic if automatic is not None else ([] if manual else reasons or [])
+    manual_reasons = manual or []
     return LearningRecord(
         id=record_id,
         createdAt=created,
@@ -49,7 +55,10 @@ def record(
         assetId=asset_id,
         state=state,
         decision=decision,  # type: ignore[arg-type]
-        rejectionReasons=reasons or [],
+        rejectionReasons=[*(automatic_reasons or reasons or []), *manual_reasons],
+        automaticRejectionReasons=automatic_reasons,
+        manualRejectionReasons=manual_reasons,
+        validatorFeedback=validator_feedback,  # type: ignore[arg-type]
         scope=scope,  # type: ignore[arg-type]
         modelSettings={"guidance": guidance, "steps": steps},
         referenceStrength=reference_strength,
@@ -447,6 +456,143 @@ class LearningLoopTests(unittest.TestCase):
         controls = LearningControls(resetAfter={"asset": "2026-06-01T00:00:00+00:00"})
         snapshot = resolve_learning(get_asset("chimera", "character", "berwynn"), records, controls)
         self.assertFalse(any(str(item.value) == "armor" for item in snapshot.recommendations))
+
+    def test_berwynn_manual_reasons_come_from_profile_not_global_registry(self):
+        berwynn = get_asset("chimera", "character", "berwynn")
+        trophy = get_asset("chimera", "item", "old-fishing-trophy")
+        tile = get_asset("chimera", "tile", "mossy-stone-floor")
+        vfx = get_asset("another-game", "vfx", "fireball-impact")
+        berwynn_ids = {item.id for item in reasons_for_asset(berwynn)}
+        trophy_ids = {item.id for item in reasons_for_asset(trophy)}
+        tile_ids = {item.id for item in reasons_for_asset(tile)}
+        vfx_ids = {item.id for item in reasons_for_asset(vfx)}
+        for reason_id in ("visible_legs", "missing_spectral_tail", "armor_shoulder"):
+            self.assertIn(reason_id, berwynn_ids)
+            self.assertNotIn(reason_id, trophy_ids)
+            self.assertNotIn(reason_id, tile_ids)
+            self.assertNotIn(reason_id, vfx_ids)
+        self.assertIn("wrong_hair_beard", berwynn_ids)
+        self.assertNotIn("wrong_hair_beard", trophy_ids)
+        self.assertIn("not_isolated", trophy_ids)
+        self.assertNotIn("not_isolated", berwynn_ids)
+        labels = resolve_manual_reasons(berwynn, ["visible_legs", "armor_shoulder"])
+        self.assertEqual(labels, ["visible legs", "armor / shoulder armor"])
+        with self.assertRaises(ValueError):
+            resolve_manual_reasons(trophy, ["visible_legs"])
+
+    def test_manual_berwynn_reasons_do_not_leak_to_other_assets(self):
+        records = [
+            record(
+                record_id=f"berwynn-manual-legs-{index}",
+                project="chimera",
+                asset_type="character",
+                asset_id="berwynn",
+                decision="rejected",
+                manual=["visible legs", "missing spectral lower body / ghost tail"],
+                state="idle",
+            )
+            for index in range(6)
+        ]
+        records.extend(
+            [
+                record(
+                    record_id=f"trophy-manual-{index}",
+                    project="chimera",
+                    asset_type="item",
+                    asset_id="old-fishing-trophy",
+                    decision="rejected",
+                    manual=["subject is not isolated"],
+                )
+                for index in range(6)
+            ]
+        )
+        berwynn = resolve_learning(get_asset("chimera", "character", "berwynn"), records)
+        trophy = resolve_learning(get_asset("chimera", "item", "old-fishing-trophy"), records)
+        tile = resolve_learning(get_asset("chimera", "tile", "mossy-stone-floor"), records)
+        vfx = resolve_learning(get_asset("another-game", "vfx", "fireball-impact"), records)
+        berwynn_vals = {str(item.value).lower() for item in berwynn.recommendations}
+        trophy_vals = {str(item.value).lower() for item in trophy.recommendations}
+        tile_vals = {str(item.value).lower() for item in tile.recommendations}
+        vfx_vals = {str(item.value).lower() for item in vfx.recommendations}
+        self.assertIn("legs", berwynn_vals)
+        self.assertIn("ghost", berwynn_vals)
+        self.assertNotIn("legs", trophy_vals)
+        self.assertNotIn("ghost", trophy_vals)
+        self.assertNotIn("legs", tile_vals)
+        self.assertNotIn("ghost", tile_vals)
+        self.assertNotIn("legs", vfx_vals)
+        self.assertIn("isolated", trophy_vals)
+        self.assertNotIn("isolated", berwynn_vals)
+        self.assertTrue(berwynn.stats.topManualReasons)
+        self.assertFalse(trophy.stats.topAutomaticReasons)
+
+    def test_manual_evidence_outweighs_automatic_evidence(self):
+        automatic = [
+            record(
+                record_id=f"auto-armor-{index}",
+                project="chimera",
+                asset_type="character",
+                asset_id="berwynn",
+                decision="rejected",
+                automatic=["Rejected: armor or shoulder pieces are visible"],
+                state="idle",
+            )
+            for index in range(3)
+        ]
+        auto_only = collect_signals(
+            LearningContext("chimera", "character", "berwynn", "idle", "S"),
+            automatic,
+            DEFAULT_POLICY,
+        )
+        self.assertFalse(any(str(item.value) == "armor" for item in auto_only))
+        manual = automatic + [
+            record(
+                record_id=f"manual-armor-{index}",
+                project="chimera",
+                asset_type="character",
+                asset_id="berwynn",
+                decision="rejected",
+                manual=["armor / shoulder armor"],
+                state="idle",
+            )
+            for index in range(3)
+        ]
+        mixed = collect_signals(
+            LearningContext("chimera", "character", "berwynn", "idle", "S"),
+            manual,
+            DEFAULT_POLICY,
+        )
+        armor = next(item for item in mixed if str(item.value) == "armor")
+        self.assertGreaterEqual(armor.manualEvidence, 3)
+        self.assertLess(armor.automaticEvidence, armor.manualEvidence)
+        self.assertGreaterEqual(armor.evidence, DEFAULT_POLICY.minSuggest)
+
+    def test_incorrect_validator_detection_is_not_used_as_learning_evidence(self):
+        records = [
+            record(
+                record_id=f"false-legs-{index}",
+                project="chimera",
+                asset_type="character",
+                asset_id="berwynn",
+                decision="rejected",
+                automatic=["Rejected: legs are visible; this asset needs a spectral ghost tail"],
+                manual=["wrong clothing"],
+                validator_feedback="incorrect_detection",
+                state="idle",
+            )
+            for index in range(6)
+        ]
+        automatic, manual = split_rejection_reasons(records[0])
+        self.assertEqual(automatic, [])
+        self.assertEqual(manual, ["wrong clothing"])
+        found = collect_signals(
+            LearningContext("chimera", "character", "berwynn", "idle", "S"),
+            records,
+            DEFAULT_POLICY,
+        )
+        values = {str(item.value).lower() for item in found}
+        self.assertIn("clothing", values)
+        self.assertNotIn("legs", values)
 
 
 if __name__ == "__main__":
