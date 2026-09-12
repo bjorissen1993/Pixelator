@@ -9,6 +9,7 @@ from models.catalog import LearningRecord
 from models.learning import LearningPolicy, RecipeAdjustment
 from learning.context import LearningContext, SCOPE_WEIGHT, record_matches
 from learning.policy import confidence_for
+from learning.quality_first import is_quality_dimension_record
 from models.learning import LearningScope
 
 STOPWORDS = {
@@ -105,7 +106,7 @@ def _fragment_signals(
     records: list[LearningRecord],
     policy: LearningPolicy,
 ) -> list[RecipeAdjustment]:
-    scoped = _records_for(scope, context, records)
+    scoped = [item for item in _records_for(scope, context, records) if not is_quality_dimension_record(item)]
     rejected = [item for item in scoped if item.decision == "rejected"]
     accepted = [item for item in scoped if item.decision == "accepted"]
     automatic_weight = max(0.0, float(policy.automaticEvidenceWeight))

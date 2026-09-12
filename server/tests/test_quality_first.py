@@ -100,31 +100,45 @@ class QualityFirstTests(unittest.TestCase):
         self.assertTrue(record_matches(type_bad, berwynn_ctx, "asset_type"))
         self.assertFalse(record_matches(type_bad, berwynn_ctx, "asset"))
 
-    def test_bearded_man_quality_helps_berwynn_recipe_without_content_leak(self):
+    def test_quality_ratings_tune_settings_not_prompt_words(self):
         quality_records: list[LearningRecord] = []
         for index in range(4):
             quality_records.extend(
                 [
                     record(
-                        record_id=f"bench-sil-{index}",
+                        record_id=f"bench-good-tech-{index}",
+                        project="pixelator-bench",
+                        asset_type="character",
+                        asset_id="bearded-man",
+                        decision="accepted",
+                        scope="global",
+                        review_mode="quality_first",
+                        guidance=8.5,
+                        steps=34,
+                    ),
+                    record(
+                        record_id=f"bench-bad-read-{index}",
                         project="pixelator-bench",
                         asset_type="character",
                         asset_id="bearded-man",
                         decision="rejected",
-                        manual=["poor silhouette"],
+                        manual=["poor pixel readability"],
+                        scope="global",
+                        review_mode="quality_first",
+                        guidance=7.5,
+                        steps=30,
+                    ),
+                    record(
+                        record_id=f"bench-good-sil-{index}",
+                        project="pixelator-bench",
+                        asset_type="character",
+                        asset_id="bearded-man",
+                        decision="accepted",
                         scope="asset_type",
                         review_mode="quality_first",
                         state="idle",
-                    ),
-                    record(
-                        record_id=f"bench-tech-{index}",
-                        project="pixelator-bench",
-                        asset_type="character",
-                        asset_id="bearded-man",
-                        decision="rejected",
-                        manual=["poor technical quality"],
-                        scope="global",
-                        review_mode="quality_first",
+                        guidance=8.5,
+                        steps=34,
                     ),
                     record(
                         record_id=f"bench-note-{index}",
@@ -141,18 +155,22 @@ class QualityFirstTests(unittest.TestCase):
         berwynn = resolve_learning(get_asset("chimera", "character", "berwynn"), quality_records)
         bench = resolve_learning(get_asset("pixelator-bench", "character", "bearded-man"), quality_records)
         trophy = resolve_learning(get_asset("chimera", "item", "old-fishing-trophy"), quality_records)
+        review_words = {"pixel", "readability", "technical", "quality", "silhouette", "proportions"}
         berwynn_vals = {str(item.value).lower() for item in berwynn.recommendations}
         bench_vals = {str(item.value).lower() for item in bench.recommendations}
         trophy_vals = {str(item.value).lower() for item in trophy.recommendations}
-        self.assertIn("silhouette", berwynn_vals)
-        self.assertIn("technical", berwynn_vals)
+        self.assertFalse(review_words & berwynn_vals)
+        self.assertFalse(review_words & trophy_vals)
         self.assertNotIn("beard", berwynn_vals)
         self.assertNotIn("tunic", berwynn_vals)
         self.assertIn("beard", bench_vals)
-        self.assertIn("technical", trophy_vals)
-        self.assertNotIn("silhouette", trophy_vals)
-        self.assertTrue(any(item.learningClass == "global_quality" for item in berwynn.recommendations))
-        self.assertTrue(any(item.learningClass == "character_type_quality" for item in berwynn.recommendations))
+        self.assertTrue(any(item.kind == "guidance" and float(item.value) == 8.5 for item in berwynn.recommendations))
+        self.assertTrue(any(item.kind == "steps" and float(item.value) == 34 for item in berwynn.recommendations))
+        self.assertTrue(any(item.kind == "guidance" and float(item.value) == 8.5 for item in trophy.recommendations))
+        self.assertTrue(any(item.learningClass == "global_quality" for item in trophy.recommendations))
+        self.assertTrue(
+            any(item.learningClass in {"global_quality", "character_type_quality"} for item in berwynn.recommendations)
+        )
 
     def test_extraction_quality_is_not_generation_learning(self):
         records = [

@@ -365,7 +365,7 @@ export function AssetLabScreen() {
         <p className="hint">
           Recipe optimization only. The model is not being retrained.
           {qualityFirst
-            ? " Quality-first ratings tune global and character-type recipes. Content notes stay on this benchmark asset."
+            ? " Quality-first ratings choose better recipe settings. They do not add review words to the prompt. Content notes stay on this benchmark asset."
             : " Asset-specific conclusions stay on this asset."}
         </p>
         <div className="learning-stats">

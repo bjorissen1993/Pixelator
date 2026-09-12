@@ -1,7 +1,8 @@
 """Quality-first review: promote generic quality signals, never content identity.
 
-Technical quality and pixel readability may become global recipe evidence.
-Silhouette and proportions may become character-type recipe evidence.
+Technical quality and pixel readability may become global recipe-setting evidence.
+Silhouette and proportions may become character-type recipe-setting evidence.
+Those ratings must not become prompt fragments.
 Transparency extraction stays on the extraction channel.
 Asset-specific notes and prompts stay on the source asset.
 """
@@ -24,6 +25,15 @@ QUALITY_FIELDS = (*GENERATION_DIMENSIONS, "transparencyExtraction")
 
 def is_quality_first(asset: AssetProfile) -> bool:
     return asset.reviewMode == "quality_first"
+
+
+def is_quality_dimension_record(record: Any) -> bool:
+    """Promoted quality ratings: recipe settings only, never prompt fragments."""
+    extra = getattr(record, "validationResults", None) or {}
+    if extra.get("qualityFirst"):
+        return True
+    scope = getattr(record, "scope", "asset") or "asset"
+    return getattr(record, "reviewMode", "standard") == "quality_first" and scope in {"global", "asset_type"}
 
 
 def require_quality_review(review: QualityReview | None) -> QualityReview:
