@@ -202,8 +202,12 @@ export function AssetLabScreen() {
           </div>
         </div>
         <p className="sprite-meta">
-          Exploitation {Math.round((learning?.exploitRatio ?? 0.8) * 100)}% · exploration{" "}
-          {Math.round((learning?.exploreRatio ?? 0.2) * 100)}%
+          Requested {Math.round((learning?.requestedExploitRatio ?? learning?.exploitRatio ?? 0.8) * 100)}%
+          {" "}exploit / {Math.round((learning?.requestedExploreRatio ?? learning?.exploreRatio ?? 0.2) * 100)}%
+          {" "}explore. Allocated for a batch of {learning?.allocationBatchSize ?? 4}:{" "}
+          {learning?.allocatedExploit ?? 3} exploit / {learning?.allocatedExplore ?? 1} explore (
+          {Math.round((learning?.allocatedExploitRatio ?? 0.75) * 100)}% /{" "}
+          {Math.round((learning?.allocatedExploreRatio ?? 0.25) * 100)}%).
         </p>
         {learning?.stats.topRejectionReasons.length ? (
           <ul className="canonical-checklist">

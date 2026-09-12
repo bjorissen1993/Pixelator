@@ -1,4 +1,19 @@
-"""Transparent recipe scoring. Seed is stored on records but never part of the fingerprint."""
+"""Transparent recipe scoring. Seed is stored on records but never part of the fingerprint.
+
+Score is a weighted sum of already-normalized rates:
+
+    acceptRate         = accepts / attempts
+    validatorPassRate  = validator_passes / attempts
+    ratingScore        = (average rating / ratingScale)
+
+    score = wAccept * acceptRate
+          + wValidator * validatorPassRate
+          + wRating * ratingScore
+
+Weights are renormalized to sum to 1. Each rate is in [0, 1], so the score is in [0, 1].
+Missing ratings contribute 0 through the rating term; they do not invent a rating.
+Zero attempts scores 0.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +22,8 @@ import json
 from collections import defaultdict
 
 from models.catalog import LearningRecord
-from models.learning import GenerationRecipe, RecipeScore
+from models.learning import GenerationRecipe, LearningPolicy, RecipeScore
+from learning.policy import DEFAULT_POLICY, unit_interval
 
 
 def recipe_fingerprint(recipe: GenerationRecipe) -> str:
@@ -28,14 +44,40 @@ def recipe_fingerprint(recipe: GenerationRecipe) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def recipe_score(accepts: int, rejects: int, validator_passes: int, rating_sum: float, rating_n: int) -> float:
-    """Laplace-smoothed score in 0..1. One lucky accept is not treated as certainty."""
-    attempts = accepts + rejects
-    rating = (rating_sum / rating_n) / 5 if rating_n else 0
-    return round((accepts + 0.25 * validator_passes + 0.2 * rating * rating_n) / (attempts + 2), 4)
+def score_weights(policy: LearningPolicy) -> tuple[float, float, float]:
+    weights = (
+        max(0.0, float(policy.scoreWeightAccept)),
+        max(0.0, float(policy.scoreWeightValidator)),
+        max(0.0, float(policy.scoreWeightRating)),
+    )
+    total = sum(weights)
+    if total <= 0:
+        return 0.60, 0.25, 0.15
+    return tuple(weight / total for weight in weights)
 
 
-def score_recipes(records: list[LearningRecord]) -> list[RecipeScore]:
+def recipe_score(
+    accepts: int,
+    rejects: int,
+    validator_passes: int,
+    rating_sum: float,
+    rating_n: int,
+    policy: LearningPolicy | None = None,
+) -> float:
+    policy = policy or DEFAULT_POLICY
+    attempts = max(0, int(accepts) + int(rejects))
+    if attempts <= 0:
+        return 0.0
+    accept_rate = unit_interval(accepts / attempts)
+    validator_rate = unit_interval(validator_passes / attempts)
+    scale = max(1.0, float(policy.ratingScale))
+    rating_score = unit_interval((rating_sum / rating_n) / scale) if rating_n else 0.0
+    w_accept, w_validator, w_rating = score_weights(policy)
+    return round(w_accept * accept_rate + w_validator * validator_rate + w_rating * rating_score, 4)
+
+
+def score_recipes(records: list[LearningRecord], policy: LearningPolicy | None = None) -> list[RecipeScore]:
+    policy = policy or DEFAULT_POLICY
     buckets: dict[str, dict] = defaultdict(
         lambda: {
             "attempts": 0,
@@ -84,6 +126,7 @@ def score_recipes(records: list[LearningRecord]) -> list[RecipeScore]:
                     bucket["validator_passes"],
                     bucket["rating_sum"],
                     bucket["rating_n"],
+                    policy,
                 ),
             )
         )

@@ -13,7 +13,7 @@ if str(SERVER_DIR) not in sys.path:
 from domain.catalog import get_asset
 from learning.context import LearningContext, record_matches
 from learning.policy import DEFAULT_POLICY, confidence_for
-from learning.recipes import build_next_recipe, plan_candidate_recipes
+from learning.recipes import allocate_batch, build_next_recipe, plan_candidate_recipes
 from learning.resolver import apply_controls, resolve_learning
 from learning.scoring import recipe_fingerprint, recipe_score, score_recipes
 from learning.signals import collect_signals, tokens_from_reason
@@ -256,11 +256,69 @@ class LearningLoopTests(unittest.TestCase):
         second = GenerationRecipe(modelId="m", guidance=7.5, steps=30, seed=99)
         self.assertEqual(recipe_fingerprint(first), recipe_fingerprint(second))
 
-    def test_recipe_score_is_transparent_and_smoothed(self):
-        weak = recipe_score(1, 0, 1, 0, 0)
+    def test_recipe_score_is_weighted_normalized_rates(self):
+        none = recipe_score(0, 0, 0, 0, 0)
+        accept_only = recipe_score(1, 0, 0, 0, 0)
+        accept_and_valid = recipe_score(1, 0, 1, 0, 0)
         strong = recipe_score(8, 1, 8, 20, 4)
-        self.assertLess(weak, 0.7)
-        self.assertGreater(strong, weak)
+        self.assertEqual(none, 0.0)
+        self.assertAlmostEqual(accept_only, 0.6)
+        self.assertAlmostEqual(accept_and_valid, 0.85)
+        expected_strong = 0.6 * (8 / 9) + 0.25 * (8 / 9) + 0.15 * 1.0
+        self.assertAlmostEqual(strong, round(expected_strong, 4))
+        self.assertGreater(strong, accept_only)
+
+    def test_recipe_scores_stay_in_unit_interval(self):
+        cases = [
+            (0, 0, 0, 0, 0),
+            (10, 0, 10, 50, 10),
+            (10, 0, 10, 0, 0),
+            (10, 0, 100, 999, 10),
+            (0, 10, 0, 0, 0),
+            (3, 7, 2, 12, 4),
+        ]
+        for args in cases:
+            score = recipe_score(*args)
+            self.assertGreaterEqual(score, 0.0, args)
+            self.assertLessEqual(score, 1.0, args)
+        perfect = recipe_score(10, 0, 10, 50, 10)
+        self.assertEqual(perfect, 1.0)
+        inflated = LearningPolicy(scoreWeightAccept=3, scoreWeightValidator=1, scoreWeightRating=1)
+        self.assertEqual(recipe_score(10, 0, 10, 50, 10, inflated), 1.0)
+
+    def test_confidence_stays_in_unit_interval(self):
+        default_strong, _apply, band = confidence_for(10, 1.0, DEFAULT_POLICY)
+        self.assertEqual(band, "strong")
+        self.assertEqual(default_strong, 0.85)
+        overflow_consistency, _, _ = confidence_for(10, 2.0, DEFAULT_POLICY)
+        self.assertEqual(overflow_consistency, 0.85)
+        wild = LearningPolicy(suggestConfidence=2.0, applyConfidence=3.0, strongConfidence=4.0)
+        overflow_band, _, _ = confidence_for(10, 1.0, wild)
+        self.assertEqual(overflow_band, 1.0)
+        for evidence in range(0, 12):
+            for consistency in (0.0, 0.5, 1.0, 1.5, 2.0):
+                confidence, _, _ = confidence_for(evidence, consistency, DEFAULT_POLICY)
+                self.assertGreaterEqual(confidence, 0.0)
+                self.assertLessEqual(confidence, 1.0)
+                wild_confidence, _, _ = confidence_for(evidence, consistency, wild)
+                self.assertGreaterEqual(wild_confidence, 0.0)
+                self.assertLessEqual(wild_confidence, 1.0)
+
+    def test_batch_allocation_reports_requested_vs_actual(self):
+        self.assertEqual(allocate_batch(4, 0.8), (3, 1))
+        self.assertEqual(allocate_batch(5, 0.8), (4, 1))
+        self.assertEqual(allocate_batch(10, 0.8), (8, 2))
+        self.assertEqual(allocate_batch(20, 0.8), (16, 4))
+        self.assertEqual(allocate_batch(0, 0.8), (0, 0))
+        snapshot = resolve_learning(get_asset("chimera", "character", "berwynn"), [])
+        self.assertAlmostEqual(snapshot.requestedExploitRatio, 0.8)
+        self.assertAlmostEqual(snapshot.requestedExploreRatio, 0.2)
+        self.assertAlmostEqual(snapshot.exploitRatio, 0.8)
+        self.assertEqual(snapshot.allocationBatchSize, 4)
+        self.assertEqual(snapshot.allocatedExploit, 3)
+        self.assertEqual(snapshot.allocatedExplore, 1)
+        self.assertAlmostEqual(snapshot.allocatedExploitRatio, 0.75)
+        self.assertAlmostEqual(snapshot.allocatedExploreRatio, 0.25)
 
     def test_score_recipes_groups_by_fingerprint(self):
         records = [

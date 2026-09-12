@@ -21,13 +21,17 @@ def load_policy() -> LearningPolicy:
     return LearningPolicy.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def unit_interval(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
 def confidence_for(evidence: int, consistency: float, policy: LearningPolicy) -> tuple[float, bool, str]:
-    """Return (confidence, may_apply, band)."""
-    consistency = max(0.0, min(1.0, consistency))
+    """confidence = unit(band_scale) * unit(consistency). Always in [0, 1]."""
+    consistency = unit_interval(consistency)
     if evidence < policy.minSuggest:
         return 0.0, False, "record"
     if evidence < policy.minApply:
-        return round(policy.suggestConfidence * consistency, 3), False, "suggest"
+        return round(unit_interval(policy.suggestConfidence) * consistency, 3), False, "suggest"
     if evidence < policy.minStrong:
-        return round(policy.applyConfidence * consistency, 3), True, "apply"
-    return round(policy.strongConfidence * consistency, 3), True, "strong"
+        return round(unit_interval(policy.applyConfidence) * consistency, 3), True, "apply"
+    return round(unit_interval(policy.strongConfidence) * consistency, 3), True, "strong"

@@ -4,7 +4,28 @@ from __future__ import annotations
 
 from models.catalog import AssetProfile
 from models.learning import GenerationRecipe, LearningControls, LearningPolicy, RecipeAdjustment, RecipeMode
+from learning.policy import unit_interval
 from learning.scoring import recipe_fingerprint
+
+
+def nearest_int(value: float) -> int:
+    """Half-up for positive values so 3.2→3 and 8.5→9 stay deterministic."""
+    return int(value + 0.5) if value >= 0 else int(value - 0.5)
+
+
+def allocate_batch(count: int, exploit_ratio: float) -> tuple[int, int]:
+    """Return (exploit_count, explore_count) for a candidate batch.
+
+    exploit_count = nearest integer of count * requested_ratio, clipped to [0, count].
+    Requested 0.8 therefore yields 3/1, 4/1, 8/2, 16/4 for batches 4, 5, 10, 20.
+    A batch of 0 allocates nothing.
+    """
+    count = int(count)
+    if count <= 0:
+        return 0, 0
+    ratio = unit_interval(exploit_ratio)
+    exploit_n = min(count, max(0, nearest_int(count * ratio)))
+    return exploit_n, count - exploit_n
 
 
 def _join(base: str, fragments: list[str]) -> str:
@@ -125,7 +146,6 @@ def plan_candidate_recipes(
     controls: LearningControls | None = None,
 ) -> list[GenerationRecipe]:
     count = max(1, count)
-    exploit_n = count if count == 1 else max(1, round(count * policy.exploitRatio))
-    exploit_n = min(count, exploit_n)
-    modes: list[RecipeMode] = ["exploit"] * exploit_n + ["explore"] * (count - exploit_n)
+    exploit_n, explore_n = allocate_batch(count, policy.exploitRatio)
+    modes: list[RecipeMode] = ["exploit"] * exploit_n + ["explore"] * explore_n
     return [build_next_recipe(asset, recommendations, policy, controls, mode) for mode in modes]

@@ -5,8 +5,8 @@ from __future__ import annotations
 from models.catalog import AssetProfile, LearningRecord
 from models.learning import LearningControls, LearningPolicy, LearningSnapshot, LearningStats, RecipeAdjustment
 from learning.context import LearningContext, record_matches
-from learning.policy import load_policy
-from learning.recipes import build_next_recipe
+from learning.policy import load_policy, unit_interval
+from learning.recipes import allocate_batch, build_next_recipe
 from learning.scoring import score_recipes
 from learning.signals import collect_signals
 
@@ -129,13 +129,18 @@ def resolve_learning(
             item
             for item in usable
             if record_matches(item, context, "asset") or record_matches(item, context, "state")
-        ]
+        ],
+        policy,
     )
     next_recipe = build_next_recipe(asset, recommendations, policy, controls)
     stats = _stats(usable, context)
     why = [item.explanation for item in next_recipe.adjustments if item.applied and item.explanation]
     if not why:
         why = ["Using the asset's required generation spec. Learning has not crossed the apply threshold yet."]
+    batch = max(1, int(policy.previewBatchSize))
+    allocated_exploit, allocated_explore = allocate_batch(batch, policy.exploitRatio)
+    requested_exploit = unit_interval(policy.exploitRatio)
+    requested_explore = round(1 - requested_exploit, 3)
     return LearningSnapshot(
         projectId=asset.projectId,
         assetType=asset.assetType,
@@ -144,8 +149,15 @@ def resolve_learning(
         direction=asset.direction,
         stats=stats,
         policy=policy,
-        exploitRatio=policy.exploitRatio,
-        exploreRatio=round(1 - policy.exploitRatio, 3),
+        exploitRatio=requested_exploit,
+        exploreRatio=requested_explore,
+        requestedExploitRatio=requested_exploit,
+        requestedExploreRatio=requested_explore,
+        allocationBatchSize=batch,
+        allocatedExploit=allocated_exploit,
+        allocatedExplore=allocated_explore,
+        allocatedExploitRatio=round(allocated_exploit / batch, 3),
+        allocatedExploreRatio=round(allocated_explore / batch, 3),
         recommendations=recommendations,
         recipeScores=recipe_scores[:8],
         nextRecipe=next_recipe,

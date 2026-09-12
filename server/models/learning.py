@@ -20,6 +20,14 @@ RecommendationKind = Literal[
 
 
 class LearningPolicy(BaseModel):
+    """Configurable Learning Loop V1 knobs.
+
+    Recipe score weights default to accept 0.60, validator 0.25, rating 0.15
+    and are renormalized to sum to 1. Confidence band values are unit-interval
+    scales multiplied by consistency. exploitRatio is the requested share of a
+    batch; integer allocation is computed separately and reported alongside it.
+    """
+
     minRecordOnly: int = 1
     minSuggest: int = 3
     minApply: int = 4
@@ -39,6 +47,11 @@ class LearningPolicy(BaseModel):
     maxReferenceStrength: float = 1.0
     applySettingBlend: float = 0.35
     strongSettingBlend: float = 0.55
+    scoreWeightAccept: float = 0.60
+    scoreWeightValidator: float = 0.25
+    scoreWeightRating: float = 0.15
+    ratingScale: float = 5.0
+    previewBatchSize: int = 4
 
 
 class RecipeAdjustment(BaseModel):
@@ -118,6 +131,13 @@ class LearningSnapshot(BaseModel):
     policy: LearningPolicy = Field(default_factory=LearningPolicy)
     exploitRatio: float = 0.8
     exploreRatio: float = 0.2
+    requestedExploitRatio: float = 0.8
+    requestedExploreRatio: float = 0.2
+    allocationBatchSize: int = 4
+    allocatedExploit: int = 0
+    allocatedExplore: int = 0
+    allocatedExploitRatio: float = 0
+    allocatedExploreRatio: float = 0
     recommendations: list[RecipeAdjustment] = Field(default_factory=list)
     recipeScores: list[RecipeScore] = Field(default_factory=list)
     nextRecipe: GenerationRecipe | None = None

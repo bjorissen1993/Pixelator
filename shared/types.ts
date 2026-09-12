@@ -542,6 +542,13 @@ export interface LearningSnapshot {
   stats: LearningStats;
   exploitRatio: number;
   exploreRatio: number;
+  requestedExploitRatio?: number;
+  requestedExploreRatio?: number;
+  allocationBatchSize?: number;
+  allocatedExploit?: number;
+  allocatedExplore?: number;
+  allocatedExploitRatio?: number;
+  allocatedExploreRatio?: number;
   recommendations: RecipeAdjustment[];
   nextRecipe?: GenerationRecipe | null;
   why: string[];
