@@ -464,6 +464,19 @@ export type AssetType =
 
 export type BackgroundMode = "transparent" | "solid" | "scene";
 export type IsolatedStatus = "ok" | "failed" | "skipped";
+export type ExtractionQuality = "good" | "warning" | "failed";
+export type FeedbackChannel = "generation" | "extraction";
+
+export interface ExtractionMetadata {
+  method?: string;
+  version?: number;
+  maskSettings?: Record<string, unknown>;
+  quality?: ExtractionQuality | null;
+  qualityScore?: number;
+  issues?: string[];
+  flaggedIncorrect?: boolean;
+  extractedAt?: string;
+}
 
 export interface ProjectProfile {
   id: string;
@@ -582,6 +595,7 @@ export interface GenerationCandidate {
   backgroundMode?: BackgroundMode | null;
   isolatedStatus?: IsolatedStatus;
   isolatedReasons?: string[];
+  extraction?: ExtractionMetadata | null;
   createdAt: string;
   status: "pending" | "accepted" | "rejected" | string;
   sha256: string;

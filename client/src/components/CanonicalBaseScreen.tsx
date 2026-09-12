@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AssetLabSession, AssetType, CatalogSummary, GenerationCandidate, IsolatedStatus, LearningSnapshot } from "@shared";
+import type { AssetLabSession, AssetType, CatalogSummary, ExtractionQuality, GenerationCandidate, LearningSnapshot } from "@shared";
 import { api } from "../api";
 import { assetUrl } from "../asset";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -7,10 +7,11 @@ import { Button } from "./ui";
 
 const DEFAULT_BATCH_SIZES = [4, 8, 12, 20] as const;
 
-function isolationBadgeLabel(status?: IsolatedStatus) {
-  if (status === "ok") return "Transparent asset: extracted";
-  if (status === "failed") return "Transparent asset: failed";
-  return "Transparent asset: not required";
+function extractionBadge(quality?: ExtractionQuality | null) {
+  if (quality === "good") return { label: "Good", cls: "status-good" };
+  if (quality === "warning") return { label: "Warning", cls: "status-warning" };
+  if (quality === "failed") return { label: "Failed", cls: "status-failed" };
+  return { label: "Pending", cls: "status-skipped" };
 }
 
 function CandidateOutputPreviews({
@@ -44,7 +45,7 @@ function CandidateOutputPreviews({
                 <img
                   alt={`${name} transparent asset ${candidate.seed}`}
                   className="canonical-preview"
-                  src={assetUrl(isolated, candidate.createdAt)}
+                  src={assetUrl(isolated, candidate.extraction?.extractedAt || candidate.createdAt)}
                 />
               ) : (
                 <p className="hint">Not extracted</p>
@@ -54,9 +55,12 @@ function CandidateOutputPreviews({
         ) : null}
       </div>
       {wantsTransparent ? (
-        <span className={`status-badge isolation-badge status-${candidate.isolatedStatus ?? "skipped"}`}>
-          {isolationBadgeLabel(candidate.isolatedStatus)}
+        <span className={`status-badge isolation-badge ${extractionBadge(candidate.extraction?.quality).cls}`}>
+          Transparent asset: {extractionBadge(candidate.extraction?.quality).label}
         </span>
+      ) : null}
+      {candidate.extraction?.flaggedIncorrect ? (
+        <p className="hint">Extraction flagged as incorrect. This is post-processing feedback, not generation feedback.</p>
       ) : null}
       {wantsTransparent && candidate.isolatedReasons?.length ? (
         <ul className="quality-warnings">
@@ -647,6 +651,32 @@ export function AssetLabScreen() {
                   >
                     Reject
                   </Button>
+                  {candidate.backgroundMode === "transparent" ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        disabled={!!busy}
+                        onClick={() =>
+                          run("Re-extracting transparency", async () => {
+                            setSession(await api.reextractAssetLab(candidate.id, projectId, assetType, assetId));
+                          })
+                        }
+                      >
+                        Re-extract transparency
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={!!busy || !!candidate.extraction?.flaggedIncorrect}
+                        onClick={() =>
+                          run("Flagging extraction", async () => {
+                            setSession(await api.flagAssetLabExtraction(candidate.id, projectId, assetType, assetId));
+                          })
+                        }
+                      >
+                        Flag extraction
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               )}
             </article>

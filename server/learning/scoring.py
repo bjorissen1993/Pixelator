@@ -77,7 +77,10 @@ def recipe_score(
 
 
 def score_recipes(records: list[LearningRecord], policy: LearningPolicy | None = None) -> list[RecipeScore]:
+    from learning.signals import generation_records
+
     policy = policy or DEFAULT_POLICY
+    records = generation_records(records)
     buckets: dict[str, dict] = defaultdict(
         lambda: {
             "attempts": 0,

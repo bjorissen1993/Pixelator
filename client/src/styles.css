@@ -508,7 +508,8 @@ button.compass-cell { width: 100%; font: inherit; }
 }
 .canonical-preview { width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; }
 .isolation-badge { justify-self: start; text-transform: none; letter-spacing: 0.02em; }
-.status-badge.status-ok { background: #24351f; color: #c8ea83; }
+.status-badge.status-ok, .status-badge.status-good { background: #24351f; color: #c8ea83; }
+.status-badge.status-warning { background: #2a3218; color: #d6c27a; }
 .status-badge.status-failed { background: #3a1f1f; color: #ffb4b4; }
 .status-badge.status-skipped { background: #161b16; color: #6f7a6c; }
 .canonical-accepted { display: grid; grid-template-columns: minmax(240px, 1fr) 1fr; gap: 16px; align-items: start; }

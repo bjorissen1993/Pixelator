@@ -25,6 +25,8 @@ AssetType = Literal[
 CanonicalKind = str
 BackgroundMode = Literal["transparent", "solid", "scene"]
 IsolatedStatus = Literal["ok", "failed", "skipped"]
+ExtractionQuality = Literal["good", "warning", "failed"]
+FeedbackChannel = Literal["generation", "extraction"]
 
 ValidatorLayer = Literal["global", "asset_type", "project", "asset"]
 ReviewReasonLayer = Literal["global", "asset_type", "asset"]
@@ -44,6 +46,17 @@ class ReviewReason(BaseModel):
     label: str
     layer: ReviewReasonLayer = "global"
     assetTypes: list[AssetType] = Field(default_factory=list)
+
+
+class ExtractionMetadata(BaseModel):
+    method: str = ""
+    version: int = 0
+    maskSettings: dict[str, Any] = Field(default_factory=dict)
+    quality: ExtractionQuality | None = None
+    qualityScore: float = 0
+    issues: list[str] = Field(default_factory=list)
+    flaggedIncorrect: bool = False
+    extractedAt: str = ""
 
 
 class GenerationSpec(BaseModel):
@@ -134,6 +147,7 @@ class LearningRecord(BaseModel):
     referenceStrategy: str = "none"
     referenceStrength: float | None = None
     learnedAdjustments: list[dict[str, Any]] = Field(default_factory=list)
+    feedbackChannel: FeedbackChannel = "generation"
 
 
 class GenerationCandidate(BaseModel):
@@ -151,6 +165,7 @@ class GenerationCandidate(BaseModel):
     backgroundMode: BackgroundMode | None = None
     isolatedStatus: IsolatedStatus = "skipped"
     isolatedReasons: list[str] = Field(default_factory=list)
+    extraction: ExtractionMetadata | None = None
     createdAt: str
     status: str = "pending"
     sha256: str = ""
@@ -215,6 +230,10 @@ class AssetLabRejectRequest(BaseModel):
     reasonIds: list[str] = Field(default_factory=list)
     note: str = ""
     validatorFeedback: ValidatorFeedback | None = None
+
+
+class AssetLabExtractFlagRequest(BaseModel):
+    note: str = ""
 
 
 class CatalogSummary(BaseModel):

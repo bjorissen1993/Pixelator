@@ -44,6 +44,7 @@ def record(
     automatic: list[str] | None = None,
     manual: list[str] | None = None,
     validator_feedback: str | None = None,
+    feedback_channel: str = "generation",
 ) -> LearningRecord:
     automatic_reasons = automatic if automatic is not None else ([] if manual else reasons or [])
     manual_reasons = manual or []
@@ -66,6 +67,7 @@ def record(
         manualRating=rating,
         seed=seed,
         validationResults={"ok": valid, "validForBase": valid},
+        feedbackChannel=feedback_channel,  # type: ignore[arg-type]
     )
 
 
@@ -593,6 +595,47 @@ class LearningLoopTests(unittest.TestCase):
         values = {str(item.value).lower() for item in found}
         self.assertIn("clothing", values)
         self.assertNotIn("legs", values)
+
+    def test_extraction_feedback_is_not_generation_learning(self):
+        records = [
+            record(
+                record_id=f"extract-arm-{index}",
+                project="chimera",
+                asset_type="character",
+                asset_id="berwynn",
+                decision="rejected",
+                manual=["arm cut off by alpha mask"],
+                feedback_channel="extraction",
+                state="idle",
+            )
+            for index in range(6)
+        ]
+        found = collect_signals(
+            LearningContext("chimera", "character", "berwynn", "idle", "S"),
+            records,
+            DEFAULT_POLICY,
+        )
+        values = {str(item.value).lower() for item in found}
+        self.assertNotIn("arm", values)
+        self.assertNotIn("alpha", values)
+        self.assertNotIn("mask", values)
+        generation = record(
+            record_id="gen-legs-0",
+            project="chimera",
+            asset_type="character",
+            asset_id="berwynn",
+            decision="rejected",
+            manual=["visible legs"],
+            state="idle",
+        )
+        mixed = collect_signals(
+            LearningContext("chimera", "character", "berwynn", "idle", "S"),
+            [*records, generation],
+            DEFAULT_POLICY,
+        )
+        mixed_vals = {str(item.value).lower() for item in mixed}
+        self.assertIn("legs", mixed_vals)
+        self.assertNotIn("arm", mixed_vals)
 
 
 if __name__ == "__main__":

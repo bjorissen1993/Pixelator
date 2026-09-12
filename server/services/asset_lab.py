@@ -18,11 +18,13 @@ from uuid import uuid4
 import config
 from domain.catalog import all_assets, all_projects, default_selection, get_asset, get_project, get_style
 from models.catalog import (
+    AssetLabExtractFlagRequest,
     AssetLabRejectRequest,
     AssetLabSession,
     AssetProfile,
     AssetType,
     CatalogSummary,
+    ExtractionMetadata,
     GenerationCandidate,
     LearningRecord,
     ValidatorFeedback,
@@ -45,8 +47,9 @@ from persistence.projects import (
 from learning.policy import ALLOWED_BATCH_SIZES, parse_batch_size
 from learning.recipes import plan_candidate_recipes
 from learning.store import load_controls
-from processing.isolation import describe_isolation, isolate_subject
+from processing.isolation import EXTRACTION_VERSION, describe_isolation, extract_transparent_asset
 from processing.output_mode import background_mode_for, expects_isolated_output
+from processing.transparency_quality import assess_transparency, issue_labels
 from processing.validators import validate_candidate
 from processing.validators.review_reasons import reasons_for_asset, resolve_manual_reasons
 from processing.validators.transparent_output import isolated_reason_messages, transparent_output_warnings
@@ -172,7 +175,35 @@ def _resolve_raw_path(asset: AssetProfile, item: GenerationCandidate) -> Path:
     return by_id
 
 
-def _apply_output_artifacts(asset: AssetProfile, item: GenerationCandidate, raw_file: Path) -> GenerationCandidate:
+def _metadata_from_extraction(result, flagged: bool = False) -> ExtractionMetadata:
+    return ExtractionMetadata(
+        method=result.method,
+        version=result.version,
+        maskSettings=dict(result.settings),
+        quality=result.quality.grade,  # type: ignore[arg-type]
+        qualityScore=result.quality.score,
+        issues=list(result.quality.issues),
+        flaggedIncorrect=flagged,
+        extractedAt=_now(),
+    )
+
+
+def _apply_extraction_result(item: GenerationCandidate, result, isolated_file: Path, flagged: bool = False) -> None:
+    warnings = transparent_output_warnings(result.image, result.report)
+    item.isolatedPath = _public_path(isolated_file)
+    item.isolatedReasons = isolated_reason_messages(warnings, result.quality)
+    if result.report.busy_background and "Isolated output: background could not be isolated" not in item.isolatedReasons:
+        item.isolatedReasons.append("Isolated output: background could not be isolated")
+    item.extraction = _metadata_from_extraction(result, flagged)
+    item.isolatedStatus = "failed" if result.quality.grade == "failed" else "ok"
+
+
+def _apply_output_artifacts(
+    asset: AssetProfile,
+    item: GenerationCandidate,
+    raw_file: Path,
+    force_extract: bool = False,
+) -> GenerationCandidate:
     from PIL import Image
 
     mode = background_mode_for(asset)
@@ -190,29 +221,45 @@ def _apply_output_artifacts(asset: AssetProfile, item: GenerationCandidate, raw_
         item.isolatedStatus = "skipped"
         item.isolatedReasons = []
         item.isolatedPath = ""
+        item.extraction = None
         return item
 
     isolated_file = candidate_isolated_path(asset.projectId, asset.assetType, asset.assetId, item.id)
     isolated_file.parent.mkdir(parents=True, exist_ok=True)
     raw_image = Image.open(raw_file)
-    if isolated_file.is_file():
+    stale = not item.extraction or item.extraction.version < EXTRACTION_VERSION
+    if force_extract or not isolated_file.is_file() or stale:
+        result = extract_transparent_asset(raw_image)
+        result.image.save(isolated_file)
+        _apply_extraction_result(item, result, isolated_file)
+    else:
         isolated = Image.open(isolated_file)
         report = describe_isolation(isolated, raw_image)
-    else:
-        isolated, report = isolate_subject(raw_image)
-        isolated.save(isolated_file)
-    warnings = transparent_output_warnings(isolated, report)
-    item.isolatedPath = _public_path(isolated_file)
-    item.isolatedReasons = isolated_reason_messages(warnings)
-    if report.busy_background and "Isolated output: background could not be isolated" not in item.isolatedReasons:
-        item.isolatedReasons.append("Isolated output: background could not be isolated")
-    item.isolatedStatus = "ok" if not item.isolatedReasons else "failed"
+        quality = assess_transparency(raw_image, isolated, report)
+        flagged = bool(item.extraction and item.extraction.flaggedIncorrect)
+        item.isolatedPath = _public_path(isolated_file)
+        item.isolatedReasons = isolated_reason_messages(transparent_output_warnings(isolated, report), quality)
+        item.extraction = ExtractionMetadata(
+            method=(item.extraction.method if item.extraction else "") or "edge_flood_refine",
+            version=item.extraction.version if item.extraction else EXTRACTION_VERSION,
+            maskSettings=item.extraction.maskSettings if item.extraction else {},
+            quality=quality.grade,  # type: ignore[arg-type]
+            qualityScore=quality.score,
+            issues=list(quality.issues),
+            flaggedIncorrect=flagged,
+            extractedAt=(item.extraction.extractedAt if item.extraction else "") or _now(),
+        )
+        item.isolatedStatus = "failed" if quality.grade == "failed" else "ok"
 
     accepted_preview = accepted_preview_path(asset.projectId, asset.assetType, asset.assetId)
     accepted_isolated = accepted_isolated_path(asset.projectId, asset.assetType, asset.assetId)
-    if item.status == "accepted" and accepted_preview.is_file():
+    if item.status == "accepted" and accepted_preview.is_file() and not force_extract:
         item.previewPath = _public_path(accepted_preview)
-    if item.status == "accepted" and accepted_isolated.is_file():
+    if item.status == "accepted" and (force_extract or stale):
+        accepted_isolated.parent.mkdir(parents=True, exist_ok=True)
+        Image.open(isolated_file).save(accepted_isolated)
+        item.isolatedPath = _public_path(accepted_isolated)
+    elif item.status == "accepted" and accepted_isolated.is_file():
         item.isolatedPath = _public_path(accepted_isolated)
     return item
 
@@ -491,6 +538,7 @@ def _record_decision(
             referenceStrategy=str((candidate.modelSettings or {}).get("referenceStrategy") or "none"),
             referenceStrength=(candidate.modelSettings or {}).get("referenceStrength"),
             learnedAdjustments=candidate.learnedAdjustments,
+            feedbackChannel="generation",
         )
     )
 
@@ -595,3 +643,76 @@ def reject_candidate(
     session.learning = snapshot_for(asset, session.batchSize).model_dump()
     save_session(session)
     return session
+
+
+def reextract_transparency(
+    candidate_id: str,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
+) -> AssetLabSession:
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
+    asset = get_asset(project_id, asset_type, asset_id)
+    if not expects_isolated_output(asset):
+        raise ValueError("Transparent extraction is not required for this asset type.")
+    session = load_session(project_id, asset_type, asset_id)
+    chosen = next((item for item in session.candidates if item.id == candidate_id), None)
+    if chosen is None:
+        raise KeyError(f"Unknown candidate {candidate_id}")
+    source = _resolve_raw_path(asset, chosen)
+    if not source.is_file():
+        raise FileNotFoundError(f"Candidate image missing: {source}")
+    _apply_output_artifacts(asset, chosen, source, force_extract=True)
+    if session.accepted and session.accepted.id == candidate_id:
+        session.accepted = chosen
+    save_session(session)
+    return session
+
+
+def flag_extraction(
+    candidate_id: str,
+    project_id: str | None = None,
+    asset_type: AssetType | None = None,
+    asset_id: str | None = None,
+    payload: AssetLabExtractFlagRequest | None = None,
+) -> AssetLabSession:
+    project_id, asset_type, asset_id = resolve_selection(project_id, asset_type, asset_id)
+    asset = get_asset(project_id, asset_type, asset_id)
+    session = load_session(project_id, asset_type, asset_id)
+    chosen = next((item for item in session.candidates if item.id == candidate_id), None)
+    if chosen is None:
+        raise KeyError(f"Unknown candidate {candidate_id}")
+    body = payload or AssetLabExtractFlagRequest()
+    if chosen.extraction is None:
+        chosen.extraction = ExtractionMetadata()
+    chosen.extraction.flaggedIncorrect = True
+    issues = list(chosen.extraction.issues)
+    labels = issue_labels(issues) or ["extraction flagged incorrect"]
+    write_learning_record(
+        LearningRecord(
+            id=f"{chosen.id}-extraction-{uuid4().hex[:6]}",
+            createdAt=_now(),
+            projectId=asset.projectId,
+            assetType=asset.assetType,
+            assetId=asset.assetId,
+            state=asset.state,
+            direction=asset.direction,
+            seed=chosen.seed,
+            modelId=chosen.modelId or asset.generation.modelId,
+            provider="isolated-asset-lab",
+            decision="rejected",
+            rejectionReasons=["subject cut off by alpha mask", *labels],
+            automaticRejectionReasons=[],
+            manualRejectionReasons=["extraction flagged incorrect", *labels],
+            manualNote=body.note.strip(),
+            candidatePath=chosen.isolatedPath or chosen.path,
+            sha256=chosen.sha256,
+            feedbackChannel="extraction",
+            validationResults={"channel": "extraction", "issues": issues, "quality": chosen.extraction.quality},
+        )
+    )
+    if session.accepted and session.accepted.id == candidate_id:
+        session.accepted = chosen
+    save_session(session)
+    return session
+

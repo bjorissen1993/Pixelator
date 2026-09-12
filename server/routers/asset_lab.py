@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from domain.catalog import get_asset
 from learning.policy import parse_batch_size
-from models.catalog import AssetLabGenerateRequest, AssetLabRejectRequest, AssetType
+from models.catalog import AssetLabExtractFlagRequest, AssetLabGenerateRequest, AssetLabRejectRequest, AssetType
 from models.learning import LearningControlRequest
 from services import asset_lab as asset_lab_service
 from services import learning as learning_service
@@ -82,6 +82,37 @@ def reject(
         )
     except Exception as exc:
         http_error(exc, context={"action": "asset_lab_reject", "candidateId": candidate_id})
+
+
+@router.post("/api/tests/asset-lab/extract/{candidate_id}")
+def reextract(
+    candidate_id: str,
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
+):
+    try:
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return asset_lab_service.reextract_transparency(candidate_id, project_id, asset_type, asset_id)
+    except Exception as exc:
+        http_error(exc, context={"action": "asset_lab_reextract", "candidateId": candidate_id})
+
+
+@router.post("/api/tests/asset-lab/extract/{candidate_id}/flag")
+def flag_extract(
+    candidate_id: str,
+    projectId: str | None = None,
+    assetType: AssetType | None = None,
+    assetId: str | None = None,
+    payload: AssetLabExtractFlagRequest | None = None,
+):
+    try:
+        project_id, asset_type, asset_id = asset_lab_service.resolve_selection(projectId, assetType, assetId)
+        return asset_lab_service.flag_extraction(
+            candidate_id, project_id, asset_type, asset_id, payload or AssetLabExtractFlagRequest()
+        )
+    except Exception as exc:
+        http_error(exc, context={"action": "asset_lab_flag_extraction", "candidateId": candidate_id})
 
 
 @router.get("/api/tests/asset-lab/learning")

@@ -16,7 +16,8 @@ if str(SERVER_DIR) not in sys.path:
 import config
 from domain.catalog import get_asset
 from models.catalog import AssetProfile, GenerationCandidate, GenerationSpec
-from processing.isolation import isolate_subject
+from processing.isolation import EXTRACTION_VERSION, extract_transparent_asset, isolate_subject
+from processing.transparency_quality import assess_transparency
 from processing.output_mode import (
     TRANSPARENT_ASSET_TYPES,
     background_mode_for,
@@ -92,6 +93,7 @@ class TransparentOutputTests(unittest.TestCase):
             SERVER_DIR / "processing" / "isolation.py",
             SERVER_DIR / "processing" / "output_mode.py",
             SERVER_DIR / "processing" / "validators" / "transparent_output.py",
+            SERVER_DIR / "processing" / "transparency_quality.py",
         ]
         for path in roots:
             text = path.read_text(encoding="utf-8")
@@ -141,6 +143,41 @@ class TransparentOutputTests(unittest.TestCase):
         self.assertIn("isolated_missing_alpha", codes)
         self.assertIn("isolated_low_transparency", codes)
 
+    def test_thin_attached_structure_is_preserved(self):
+        image = Image.new("RGB", (64, 64), (160, 160, 160))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((24, 16, 40, 48), fill=(20, 180, 40))
+        draw.rectangle((40, 28, 58, 31), fill=(148, 148, 154))
+        isolated, _report = isolate_subject(image)
+        pixels = isolated.load()
+        self.assertGreaterEqual(pixels[50, 29][3], 16)
+        self.assertEqual(pixels[2, 2][3], 0)
+
+    def test_tiny_interior_holes_are_filled(self):
+        image = Image.new("RGB", (64, 64), (160, 160, 160))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((16, 12, 48, 52), fill=(20, 180, 40))
+        draw.rectangle((28, 28, 31, 31), fill=(160, 160, 160))
+        isolated, _report = isolate_subject(image)
+        self.assertGreaterEqual(isolated.getpixel((29, 29))[3], 16)
+
+    def test_quality_detects_over_removal(self):
+        raw = _subject_on_gray()
+        isolated, report = isolate_subject(raw)
+        damaged = isolated.copy()
+        draw = ImageDraw.Draw(damaged)
+        draw.rectangle((20, 12, 44, 28), fill=(20, 180, 40, 0))
+        quality = assess_transparency(raw, damaged, report)
+        self.assertIn(quality.grade, {"warning", "failed"})
+        self.assertTrue({"excessive_subject_loss", "alpha_edge_damage"} & set(quality.issues))
+
+    def test_extraction_metadata_is_generic(self):
+        result = extract_transparent_asset(_subject_on_gray())
+        self.assertEqual(result.version, EXTRACTION_VERSION)
+        self.assertEqual(result.method, "edge_flood_refine")
+        self.assertTrue(result.settings["binaryAlpha"])
+        self.assertIn(result.quality.grade, {"good", "warning", "failed"})
+
     def test_derived_files_leave_raw_untouched(self):
         raw = _subject_on_gray()
         with tempfile.TemporaryDirectory() as tmp:
@@ -177,6 +214,9 @@ class TransparentOutputTests(unittest.TestCase):
                 self.assertTrue((raw_file.parent / "abc123.isolated.png").is_file())
                 self.assertEqual(updated.isolatedStatus, "ok")
                 self.assertEqual(updated.backgroundMode, "transparent")
+                self.assertIsNotNone(updated.extraction)
+                self.assertEqual(updated.extraction.version, EXTRACTION_VERSION)
+                self.assertIn(updated.extraction.quality, {"good", "warning", "failed"})
                 tile = _apply_output_artifacts(
                     _profile("tile", asset_id="hero"),
                     candidate.model_copy(),

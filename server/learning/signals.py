@@ -60,6 +60,14 @@ def tokens_from_reason(reason: str) -> list[str]:
     return [word for word in words if word not in STOPWORDS]
 
 
+def is_generation_feedback(item: LearningRecord) -> bool:
+    return getattr(item, "feedbackChannel", "generation") != "extraction"
+
+
+def generation_records(records: list[LearningRecord]) -> list[LearningRecord]:
+    return [item for item in records if is_generation_feedback(item)]
+
+
 def split_rejection_reasons(item: LearningRecord) -> tuple[list[str], list[str]]:
     """Return (automatic, manual). Legacy rows with only rejectionReasons count as automatic."""
     structured = bool(
@@ -218,6 +226,7 @@ def collect_signals(
     records: list[LearningRecord],
     policy: LearningPolicy,
 ) -> list[RecipeAdjustment]:
+    records = generation_records(records)
     scopes: list[LearningScope] = ["global", "project", "asset_type", "asset"]
     if context.state or context.direction:
         scopes.append("state")

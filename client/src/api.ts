@@ -208,6 +208,22 @@ export const api = {
       `/api/tests/asset-lab/accept/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
       { method: "POST", body: "{}" },
     ),
+  reextractAssetLab: (candidateId: string, projectId: string, assetType: AssetType, assetId: string) =>
+    request<AssetLabSession>(
+      `/api/tests/asset-lab/extract/${candidateId}?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+      { method: "POST", body: "{}" },
+    ),
+  flagAssetLabExtraction: (
+    candidateId: string,
+    projectId: string,
+    assetType: AssetType,
+    assetId: string,
+    note = "",
+  ) =>
+    request<AssetLabSession>(
+      `/api/tests/asset-lab/extract/${candidateId}/flag?projectId=${encodeURIComponent(projectId)}&assetType=${encodeURIComponent(assetType)}&assetId=${encodeURIComponent(assetId)}`,
+      { method: "POST", body: JSON.stringify({ note }) },
+    ),
   rejectAssetLab: (
     candidateId: string,
     projectId: string,

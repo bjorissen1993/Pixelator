@@ -8,7 +8,7 @@ from learning.context import LearningContext, record_matches
 from learning.policy import load_policy, unit_interval
 from learning.recipes import allocate_batch, build_next_recipe
 from learning.scoring import score_recipes
-from learning.signals import collect_signals, split_rejection_reasons
+from learning.signals import collect_signals, generation_records, split_rejection_reasons
 
 __all__ = ["LearningContext", "apply_controls", "resolve_learning"]
 
@@ -81,7 +81,7 @@ def apply_controls(items: list[RecipeAdjustment], controls: LearningControls) ->
 def _stats(records: list[LearningRecord], context: LearningContext) -> LearningStats:
     scoped = [
         item
-        for item in records
+        for item in generation_records(records)
         if item.projectId == context.projectId
         and item.assetType == context.assetType
         and item.assetId == context.assetId

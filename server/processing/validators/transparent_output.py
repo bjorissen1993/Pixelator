@@ -10,6 +10,7 @@ from PIL import Image
 
 from models.character import QualityWarning
 from processing.isolation import IsolationReport, describe_isolation
+from processing.transparency_quality import TransparencyQuality, issue_labels
 from processing.validation import _warn
 
 ISOLATED_MESSAGES = {
@@ -43,5 +44,13 @@ def transparent_output_warnings(
     return extra
 
 
-def isolated_reason_messages(warnings: list[QualityWarning]) -> list[str]:
-    return [warning.message for warning in warnings if warning.message]
+def isolated_reason_messages(
+    warnings: list[QualityWarning],
+    quality: TransparencyQuality | None = None,
+) -> list[str]:
+    messages = [warning.message for warning in warnings if warning.message]
+    if quality:
+        for label in issue_labels(quality.issues):
+            if label not in messages:
+                messages.append(label)
+    return messages
